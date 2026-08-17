@@ -1,0 +1,16 @@
+# --- Runtime ---------------------------------------------------------------
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+pydantic==2.11.4
+pydantic-settings==2.9.1
+SQLAlchemy==2.0.41
+PyJWT==2.10.1
+cryptography==44.0.2
+python-multipart==0.0.20
+httpx==0.28.1
+
+# --- MT5 (Windows only; the mock gateway is used elsewhere) -----------------
+MetaTrader5==5.0.6090 ; sys_platform == "win32"
+
+# --- Test / dev ------------------------------------------------------------
+pytest==8.3.5
