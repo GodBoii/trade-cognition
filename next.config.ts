@@ -27,12 +27,15 @@ import type { NextConfig } from "next";
  * backend directly if you want the socket.
  */
 const API_PROXY_TARGET = process.env.API_PROXY_TARGET ?? "http://127.0.0.1:8000";
+const IS_VERCEL = process.env.VERCEL === "1";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
-  // Emit a self-contained server bundle so the Docker image stays small.
-  output: "standalone",
+  // Docker uses Next's self-contained server bundle. Vercel builds the app
+  // into its own deployment format, so standalone output is unnecessary there
+  // and conflicts with Vercel's post-build trace processing.
+  ...(IS_VERCEL ? {} : { output: "standalone" as const }),
 
   // The Python backend and its virtualenv are not part of the web build.
   outputFileTracingExcludes: {
