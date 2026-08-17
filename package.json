@@ -1,0 +1,38 @@
+{
+  "name": "trade-cognition",
+  "private": true,
+  "version": "1.0.0",
+  "description": "MT5-integrated trading platform: pre-trade risk calculation, rule enforcement and 1:1/1:2/1:3 position management",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "lint": "next lint",
+    "dev:api": "uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000",
+    "dev:all": "concurrently --names api,web --prefix-colors cyan,magenta --kill-others-on-fail \"npm:dev:api\" \"npm:dev\"",
+    "test": "npm run test:api",
+    "test:api": "cd backend && pytest",
+    "smoke": "cd backend && python scripts/smoke.py",
+    "check:stack": "python backend/scripts/check_dev_stack.py",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down -v"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.3",
+    "next": "16.3.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "concurrently": "10.0.5",
+    "typescript": "5.9.3"
+  }
+}
