@@ -2,41 +2,46 @@
 
 import { useEffect, useState } from "react";
 
-import { api } from "@/lib/api/client";
-import type { RiskProfile } from "@/lib/api/types";
 import { Badge, Banner, Card, ErrorBanner, Field, Spinner } from "@/components/ui";
-import { lots, money } from "@/lib/format";
-import { useAsync } from "@/lib/useAsync";
+import { saveTradingRules } from "@/lib/supabase/data";
+import type { UserTradingRules } from "@/lib/supabase/types";
 import { useAuth } from "@/state/auth";
+import { useTrading } from "@/state/trading";
 
 export default function RulesView() {
-  const { account } = useAuth();
-  const loaded = useAsync(() => api.profile(), []);
-  const ladders = useAsync(() => api.ladders(), []);
-
-  const [draft, setDraft] = useState<RiskProfile | null>(null);
+  const { user } = useAuth();
+  const { rules, loading, error: loadError, refresh } = useTrading();
+  const [draft, setDraft] = useState<UserTradingRules | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    if (loaded.data) setDraft(loaded.data);
-  }, [loaded.data]);
+    if (rules) setDraft(rules);
+  }, [rules]);
 
-  if (loaded.loading || !draft) return <Spinner label="loading risk profile" />;
-
-  const set = <K extends keyof RiskProfile>(key: K, value: RiskProfile[K]) => {
+  const set = <K extends keyof UserTradingRules>(key: K, value: UserTradingRules[K]) => {
+    if (!draft) return;
     setDraft({ ...draft, [key]: value });
     setSaved(false);
   };
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!user || !draft) return;
     setSaving(true);
     setError(null);
     try {
-      const next = await api.saveProfile(draft);
+      const next = await saveTradingRules(user.id, {
+        capital_basis: draft.capital_basis,
+        fixed_capital: draft.fixed_capital,
+        max_concurrent_positions: draft.max_concurrent_positions,
+        max_daily_loss_pct: draft.max_daily_loss_pct,
+        margin_utilisation_cap_pct: draft.margin_utilisation_cap_pct,
+        min_reward_risk: draft.min_reward_risk,
+      });
       setDraft(next);
+      await refresh();
       setSaved(true);
     } catch (cause) {
       setError(cause);
@@ -45,228 +50,178 @@ export default function RulesView() {
     }
   };
 
-  const capital = account?.last_balance ?? 0;
-  const exampleLots = (capital / 1000) * draft.lots_per_1000;
-  const exampleRisk = capital * (draft.max_risk_pct / 100);
-  const currency = account?.currency ?? "USD";
-
   return (
     <>
       <div className="page-head">
         <div>
           <h1>Trading rules</h1>
           <p>
-            These settings are what the engine enforces on every entry. Rule 1 (one active trade per
-            derivative) is structural and has no configuration.
+            Supabase stores this strategy; the local worker revalidates it with fresh MT5 data
+            immediately before any order reaches the broker.
           </p>
         </div>
+        <Badge tone="info">worker enforced</Badge>
       </div>
 
-      <ErrorBanner error={loaded.error} />
+      <ErrorBanner error={loadError} />
       <ErrorBanner error={error} />
-      {saved && <Banner tone="ok">Risk profile saved. It applies to the next entry.</Banner>}
+      {saved && <Banner tone="ok">Rules saved in Supabase for the next trade.</Banner>}
 
-      <form onSubmit={save}>
-        <div className="grid grid-2">
-          <Card title="Rule 2 — lot allocation from capital">
-            <Field
-              label="Lots per 1,000 of capital"
-              hint="House standard is 0.02. Values above 0.10 are refused."
-            >
-              <input
-                type="number"
-                step={0.001}
-                min={0.001}
-                max={0.1}
-                value={draft.lots_per_1000}
-                onChange={(e) => set("lots_per_1000", Number(e.target.value))}
-                required
-              />
-            </Field>
+      {loading && !draft ? (
+        <Spinner label="loading rules from Supabase" />
+      ) : !draft ? (
+        <Card title="Rules are not installed">
+          <p className="muted mb-0">
+            Run <code>supabase/002_async_trade_queue.sql</code> in the Supabase SQL Editor, then
+            refresh this page. The website remains usable while the database setup is incomplete.
+          </p>
+        </Card>
+      ) : (
+        <form onSubmit={save}>
+          <div className="grid grid-2">
+            <Card title="Rule 1 — one active trade per derivative">
+              <p className="muted">
+                A user may have only one queued, validating, submitted, or open trade for the same
+                symbol. The database unique index and the worker both enforce this rule.
+              </p>
+              <Badge tone="ok">always enabled · not overridable</Badge>
+            </Card>
 
-            <Field
-              label="Enforcement"
-              hint="Strict requires the exact allocation; ceiling allows smaller sizes."
-            >
-              <select
-                value={draft.lot_rule_mode}
-                onChange={(e) => set("lot_rule_mode", e.target.value as RiskProfile["lot_rule_mode"])}
-              >
-                <option value="strict">Strict — must match the allocation</option>
-                <option value="max">Ceiling — may be smaller</option>
-              </select>
-            </Field>
+            <Card title="Rule 2 — strict lot allocation">
+              <p className="muted">
+                Position allocation is exactly <strong>0.02 lots per 1,000</strong> units of the
+                selected trading capital, then rounded down to the broker&apos;s valid lot step.
+              </p>
+              <Badge tone="ok">0.02 / 1,000 · not overridable</Badge>
+              <div className="mt">
+                <Field label="Capital basis" hint="Balance figure used by the allocation and risk cap">
+                  <select
+                    value={draft.capital_basis}
+                    onChange={(event) =>
+                      set(
+                        "capital_basis",
+                        event.target.value as UserTradingRules["capital_basis"],
+                      )
+                    }
+                  >
+                    <option value="balance">Balance</option>
+                    <option value="equity">Equity (includes floating P/L)</option>
+                    <option value="fixed">Fixed allocation</option>
+                  </select>
+                </Field>
+                {draft.capital_basis === "fixed" && (
+                  <Field label="Fixed trading capital">
+                    <input
+                      type="number"
+                      min={1}
+                      step={100}
+                      value={draft.fixed_capital}
+                      onChange={(event) => set("fixed_capital", Number(event.target.value))}
+                      required
+                    />
+                  </Field>
+                )}
+              </div>
+            </Card>
 
-            <Field label="Capital basis" hint="Which account figure the allocation is computed from">
-              <select
-                value={draft.capital_basis}
-                onChange={(e) => set("capital_basis", e.target.value as RiskProfile["capital_basis"])}
-              >
-                <option value="balance">Balance</option>
-                <option value="equity">Equity (includes floating P/L)</option>
-                <option value="fixed">Fixed amount</option>
-              </select>
-            </Field>
+            <Card title="Rule 3 — maximum stop-loss risk">
+              <p className="muted">
+                The calculated loss at the proposed stop may never exceed <strong>2%</strong> of
+                selected trading capital. Exact risk uses MT5 tick value and the current quote.
+              </p>
+              <Badge tone="ok">2% hard ceiling · not overridable</Badge>
+              <div className="mt">
+                <Field
+                  label="Minimum final reward-to-risk"
+                  hint="A higher value may reject more trades; 0 disables this extra guard"
+                >
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.1}
+                    value={draft.min_reward_risk}
+                    onChange={(event) => set("min_reward_risk", Number(event.target.value))}
+                  />
+                </Field>
+              </div>
+            </Card>
 
-            {draft.capital_basis === "fixed" && (
-              <Field label="Fixed capital" hint="Useful when only part of the account is allocated">
+            <Card title="Profit ladder — 1R / 2R / 3R">
+              <ol className="small muted" style={{ margin: 0, paddingLeft: 18 }}>
+                <li>TP1 at 1R: close 50%; move SL to half the original stop distance.</li>
+                <li>TP2 at 2R: close 25%; move SL to the TP1 price.</li>
+                <li>TP3 at 3R: close the final 25%.</li>
+              </ol>
+              <div className="mt">
+                <Badge tone="ok">runner_1_2_3 · 50% / 25% / 25%</Badge>
+              </div>
+            </Card>
+
+            <Card title="Additional portfolio guards" hint="0 disables an optional guard">
+              <Field label="Maximum concurrent positions" hint="Across different derivatives">
                 <input
                   type="number"
-                  min={1}
-                  step={100}
-                  value={draft.fixed_capital}
-                  onChange={(e) => set("fixed_capital", Number(e.target.value))}
+                  min={0}
+                  max={100}
+                  value={draft.max_concurrent_positions}
+                  onChange={(event) =>
+                    set("max_concurrent_positions", Number(event.target.value))
+                  }
                 />
               </Field>
-            )}
+              <Field label="Daily realised-loss limit (% of capital)">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  value={draft.max_daily_loss_pct}
+                  onChange={(event) => set("max_daily_loss_pct", Number(event.target.value))}
+                />
+              </Field>
+              <Field label="Margin cap (% of currently free margin)">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={draft.margin_utilisation_cap_pct}
+                  onChange={(event) =>
+                    set("margin_utilisation_cap_pct", Number(event.target.value))
+                  }
+                />
+              </Field>
+            </Card>
 
-            {capital > 0 && (
-              <p className="tiny faint mb-0">
-                On the current balance of {money(capital, currency)} this prescribes{" "}
-                <strong>{lots(exampleLots)} lots</strong> per entry, before the symbol lot step is
-                applied.
+            <Card title="Offline behavior">
+              <p className="muted">
+                New instructions expire after five minutes by default and can never be scheduled
+                more than fifteen minutes ahead. An offline worker will not place a stale market
+                order when it returns.
               </p>
-            )}
-          </Card>
-
-          <Card title="Rule 3 — maximum loss at the stop">
-            <Field
-              label="Maximum risk per trade (% of capital)"
-              hint="House standard is 2%. This can never be overridden at entry."
-            >
-              <input
-                type="number"
-                step={0.1}
-                min={0.1}
-                max={20}
-                value={draft.max_risk_pct}
-                onChange={(e) => set("max_risk_pct", Number(e.target.value))}
-                required
-              />
-            </Field>
-
-            <Field
-              label="Minimum reward-to-risk"
-              hint="Blocks entries whose final target is below this multiple. 0 disables."
-            >
-              <input
-                type="number"
-                step={0.1}
-                min={0}
-                value={draft.min_reward_risk}
-                onChange={(e) => set("min_reward_risk", Number(e.target.value))}
-              />
-            </Field>
-
-            {capital > 0 && (
               <p className="tiny faint mb-0">
-                A stopped-out trade may cost at most{" "}
-                <strong>{money(exampleRisk, currency)}</strong>.
+                Existing broker-side hard SL/TP remains active. Custom partial exits and stop
+                movements require the worker or an Expert Advisor to be online.
               </p>
-            )}
-          </Card>
+            </Card>
+          </div>
 
-          <Card title="Profit taking">
-            <Field label="Ladder" hint="Applies to new entries; open trades keep the ladder they started with.">
-              <select
-                value={draft.ladder_preset}
-                onChange={(e) => set("ladder_preset", e.target.value as RiskProfile["ladder_preset"])}
-              >
-                <option value="standard_1_2_3">Standard 1:1 / 1:2 / 1:3</option>
-                <option value="runner_1_2_3">Runner 1:1 / 1:2 / 1:3</option>
-              </select>
-            </Field>
-
-            {ladders.data?.map((ladder) => (
-              <div key={ladder.preset} className="mt">
-                <div className="inline">
-                  <strong className="small">{ladder.label}</strong>
-                  {ladder.preset === draft.ladder_preset && <Badge tone="info">selected</Badge>}
-                </div>
-                <p className="tiny muted">{ladder.description}</p>
-                <ul className="tiny faint" style={{ margin: 0, paddingLeft: 18 }}>
-                  {ladder.stages.map((stage) => (
-                    <li key={stage.key}>
-                      <strong>{stage.key}</strong> at 1:{stage.r_multiple.toFixed(0)} — close{" "}
-                      {(stage.close_fraction * 100).toFixed(0)}%, stop{" "}
-                      {stage.sl_action.replace(/_/g, " ")}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </Card>
-
-          <Card title="Portfolio guards" hint="Set to 0 to disable a guard">
-            <Field
-              label="Maximum concurrent positions"
-              hint="Across all derivatives. 0 means unlimited."
+          <div className="mt btn-group">
+            <button className="btn btn-primary" type="submit" disabled={saving}>
+              {saving ? "Saving to Supabase..." : "Save configurable guards"}
+            </button>
+            <button
+              className="btn"
+              type="button"
+              onClick={() => rules && setDraft(rules)}
+              disabled={saving}
             >
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={draft.max_concurrent_positions}
-                onChange={(e) => set("max_concurrent_positions", Number(e.target.value))}
-              />
-            </Field>
-
-            <Field
-              label="Daily loss limit (% of capital)"
-              hint="Once realised losses reach this, new entries are blocked until tomorrow."
-            >
-              <input
-                type="number"
-                min={0}
-                max={100}
-                step={0.5}
-                value={draft.max_daily_loss_pct}
-                onChange={(e) => set("max_daily_loss_pct", Number(e.target.value))}
-              />
-            </Field>
-
-            <Field
-              label="Margin utilisation cap (% of free margin)"
-              hint="Refuses entries whose margin requirement exceeds this share of free margin."
-            >
-              <input
-                type="number"
-                min={0}
-                max={100}
-                step={5}
-                value={draft.margin_utilisation_cap_pct}
-                onChange={(e) => set("margin_utilisation_cap_pct", Number(e.target.value))}
-              />
-            </Field>
-
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={draft.allow_manual_override}
-                onChange={(e) => set("allow_manual_override", e.target.checked)}
-              />
-              <span>
-                Allow manual override of overridable rules (lot allocation, margin cap, minimum
-                reward-to-risk). Rule 1 and Rule 3 are never overridable.
-              </span>
-            </label>
-          </Card>
-        </div>
-
-        <div className="mt btn-group">
-          <button className="btn btn-primary" type="submit" disabled={saving}>
-            {saving ? "Saving..." : "Save risk profile"}
-          </button>
-          <button
-            className="btn"
-            type="button"
-            onClick={() => loaded.data && setDraft(loaded.data)}
-            disabled={saving}
-          >
-            Discard changes
-          </button>
-        </div>
-      </form>
+              Discard changes
+            </button>
+          </div>
+        </form>
+      )}
     </>
   );
 }
