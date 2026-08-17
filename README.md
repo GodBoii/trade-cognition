@@ -22,7 +22,7 @@ Before any order reaches the broker, it must pass through the rules evaluation p
 | Rule Code | Description | Overridable |
 | :--- | :--- | :---: |
 | `RULE1_ONE_ACTIVE_TRADE` | **One Live Entry per Derivative**: Prevents averaging down and revenge-trading duplicate positions. Guaranteed by database unique constraints `(user_id, active_key)`. | ❌ **No** |
-| `RULE2_LOT_ALLOCATION` | **Formula-Based Lot Allocation**: Computes size as `(Account Balance / 1,000) * 0.02 lots`. | ⚙️ Configurable |
+| `RULE2_LOT_ALLOCATION` | **Strict Formula Allocation**: Computes size as `(Trading Capital / 1,000) * 0.02 lots`. | ❌ **No** |
 | `RULE2_VOLUME_CONSTRAINTS`| **Broker Compliance**: Enforces broker minimum, maximum, and lot step boundaries. | ❌ **No** |
 | `RULE3_MAX_RISK` | **Strict 2% Risk Ceiling**: Monetary loss at the hard stop-loss cannot exceed 2% of user balance. | ❌ **No** |
 | `GUARD_MARGIN_CAP` | **Margin Utilization Cap**: Ensures margin requirements never exceed account safety thresholds. | ❌ **No** |
@@ -36,7 +36,7 @@ Trade Cognition manages active positions across an automated multi-rung executio
 
 ```
 [Entry Price] ──────► [1:1 Rung (TP1)] ──────► [1:2 Rung (TP2)] ──────► [1:3 Rung (TP3)]
-  Initial SL           Close 50% Volume          Close remaining           Close residual
+  Initial SL           Close 50% Volume          Close 25% Volume          Close final 25%
                       Move SL to 0.5R Risk      Move SL to Breakeven/TP1   Final Target
 ```
 
@@ -52,48 +52,35 @@ Trade Cognition manages active positions across an automated multi-rung executio
 
 ---
 
-### 5. Modern Next.js 16 Web Dashboard
-- **Real-Time Telemetry**: Live account metrics, active positions, equity tracking, and streaming price feeds over WebSockets.
-- **Interactive Trade Ticket**: Instant pre-trade calculation preview with visual risk/reward breakdown and rule validation reports.
-- **Discipline Journal**: Reflective post-trade journal capturing mindset tags, execution quality ratings, and trade review notes.
-- **Rules Inspector**: Live risk configuration and interactive discipline guard breakdown.
+### 5. Backend-Independent Next.js 16 Dashboard
+- **Supabase Auth**: Email and Google sessions remain valid even when Docker is stopped.
+- **Durable Trade Ticket**: Instructions use an idempotency UUID and short execution deadline.
+- **Honest Offline State**: Missing/stale snapshots are never rendered as fake zero balances or successful orders.
+- **Queue & Audit Views**: Queued, claimed, validating, submitted, rejected, failed, expired, open, and closed remain distinct states.
 
 ---
 
 ## 🏛 System Architecture
 
+```text
+Vercel / Next.js website
+        |
+        | Supabase Auth + RLS-protected reads/RPCs
+        v
+Supabase control plane
+  rules · connections · expiring intents · commands · audit events
+        ^
+        | scoped worker token + atomic claim leases
+        |
+Local execution worker
+  existing calculator · rules engine · trade service · monitor
+        |
+        +-- Linux Docker: mock broker only
+        `-- real MT5: Windows worker/bridge or future MQL5 EA
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Next.js 16 Web Client                    │
-│     (Tailwind / Dark Theme UI • React Query • WebSockets)   │
-└──────────────────────────────┬──────────────────────────────┘
-                               │ HTTP / WS
-┌──────────────────────────────▼──────────────────────────────┐
-│                    FastAPI Backend Router                   │
-│         /api/calculator • /api/trades • /api/rules          │
-└──────────────┬──────────────────────────────┬───────────────┘
-               │                              │
-┌──────────────▼──────────────┐┌──────────────▼───────────────┐
-│     Domain Risk & Rules     ││   Position Monitor Worker    │
-│  • Decimal quantisation     ││  • 1-second polling loop     │
-│  • Capital-to-lot formula   ││  • Automated ladder actions  │
-│  • 3-stage target generator ││  • Monotonic SL tightening   │
-└──────────────┬──────────────┘└──────────────┬───────────────┘
-               │                              │
-┌──────────────▼──────────────────────────────▼───────────────┐
-│                     MT5 Gateway Layer                       │
-│    ┌────────────────────────┐    ┌─────────────────────┐    │
-│    │  Simulated Mock Broker │    │  Real MT5 Terminal  │    │
-│    │     (In-Memory/CI)     │    │   (Windows Native)  │    │
-│    └────────────────────────┘    └─────────────────────┘    │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────┐
-│                  PostgreSQL / SQLite Database               │
-│   • Unique (user_id, active_key) race-safe active lock      │
-│   • Audit-trail events & execution journal logs             │
-└─────────────────────────────────────────────────────────────┘
-```
+
+There is no required browser-to-worker HTTP connection. MT5 credentials stay on
+the local machine and never enter browser-readable Supabase tables.
 
 ---
 
@@ -124,11 +111,11 @@ Trade Cognition manages active positions across an automated multi-rung executio
 │   │   │   └── rules.py        # Transparent 3-rule verification engine
 │   │   ├── mt5/                # MetaTrader 5 gateway & mock broker
 │   │   ├── services/           # Accounts, trades, calculator & journal services
-│   │   └── workers/            # Position monitor background worker
-│   └── tests/                  # 113 comprehensive pytest unit/integration tests
+│   │   └── workers/            # Position monitor + Supabase queue worker
+│   └── tests/                  # Domain, workflow, auth and queue tests
 ├── components/                 # Reusable React components & UI primitives
-├── lib/                        # API client, Supabase helpers & formatting
-├── state/                      # Auth context & WebSocket state hooks
+├── lib/                        # Supabase control-plane helpers & formatting
+├── state/                      # Independent Auth and trading-control contexts
 ├── supabase/                   # PostgreSQL schema definitions & migrations
 ├── docker-compose.yml          # Local containerized orchestration
 └── Dockerfile                  # Container build definitions
@@ -220,7 +207,7 @@ backend/tests/test_rules.py ...................                          [ 89%]
 backend/tests/test_supabase_auth.py .                                    [ 90%]
 backend/tests/test_workflow.py ...........                               [100%]
 
-============================= 113 passed in 23.50s =============================
+All backend tests should pass; the exact count grows as queue/recovery coverage is added.
 ```
 
 ---

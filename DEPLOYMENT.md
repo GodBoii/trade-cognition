@@ -1,39 +1,75 @@
 # Deployment
 
-## 1. Supabase
+## 1. Supabase control plane
 
-Run [`supabase/001_auth_profiles.sql`](supabase/001_auth_profiles.sql) and apply
-the Auth URL settings in [`supabase/README.md`](supabase/README.md).
+In Supabase SQL Editor, run these files in order:
 
-## 2. Python backend (Docker)
+1. `supabase/000_RUN_THIS_IN_SUPABASE.sql`
+2. `supabase/002_async_trade_queue.sql`
 
-Set these values in the backend host's `.env`, then run `docker compose up -d
---build`:
+Then apply the Auth Site URL, redirect URLs, and Google provider settings in
+`supabase/README.md`. The second migration creates RLS-protected rules,
+non-secret MT5 connection metadata, expiring trade intents, queue commands,
+worker identities, and audit events.
 
-```dotenv
-TC_ENV=production
-TC_SUPABASE_URL=https://fuobevtuecbzvqjralax.supabase.co
-TC_SUPABASE_ANON_KEY=your-anon-or-publishable-key
-TC_CREDENTIAL_ENCRYPTION_KEY=your-stable-fernet-key
-TC_CORS_ORIGINS=https://YOUR-VERCEL-DOMAIN
-```
+## 2. Frontend on Vercel
 
-Expose the backend through HTTPS. Keep one backend worker because the MT5
-position monitor is process-wide. The supplied Linux image uses the mock MT5
-gateway; live MetaTrader 5 needs the backend/terminal on a compatible Windows
-host.
-
-## 3. Frontend (Vercel)
-
-Import the repository into Vercel as a Next.js project. Add these build-time
-environment variables for Production and Preview as needed:
+Import the repository as one Next.js project at the repository root. Add only
+the public Supabase browser values for Production and Preview:
 
 ```dotenv
-NEXT_PUBLIC_SUPABASE_URL=https://fuobevtuecbzvqjralax.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-or-publishable-key
-NEXT_PUBLIC_API_URL=https://YOUR-BACKEND-DOMAIN/api
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_PUBLIC_ANON_OR_PUBLISHABLE_KEY
 ```
 
-Redeploy after changing any `NEXT_PUBLIC_*` value. Add every Vercel domain that
-will call the API to `TC_CORS_ORIGINS` and every OAuth callback URL to
-Supabase's Redirect URLs allow list.
+Do not set `NEXT_PUBLIC_API_URL`. Vercel does not host or proxy the local MT5
+worker. Redeploy after changing a `NEXT_PUBLIC_*` build-time value.
+
+Never put any of these in Vercel:
+
+- `TC_WORKER_TOKEN`
+- an MT5 login password
+- `TC_CREDENTIAL_ENCRYPTION_KEY`
+- a Supabase service-role key
+
+## 3. Create a local worker pairing
+
+Sign in to the deployed website, open **Accounts**, and create a worker plus MT5
+connection. Copy the one-time worker token immediately. The browser does not
+save it.
+
+Put the token and public Supabase values in the local machine's `.env`:
+
+```dotenv
+TC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+TC_SUPABASE_ANON_KEY=YOUR_PUBLIC_ANON_OR_PUBLISHABLE_KEY
+TC_SUPABASE_QUEUE_ENABLED=true
+TC_WORKER_TOKEN=tcw_THE_ONE_TIME_TOKEN
+TC_WORKER_BATCH_SIZE=1
+TC_CREDENTIAL_ENCRYPTION_KEY=YOUR_STABLE_FERNET_KEY
+```
+
+Start the development worker stack with:
+
+```text
+docker compose up -d --build
+```
+
+The queue is durable and asynchronous. The website never needs an HTTP request
+to Docker. A queued instruction expires after five minutes by default, so an
+offline laptop cannot later execute a stale market order.
+
+## 4. Real MT5 limitation
+
+The supplied Docker image is Linux and uses `TC_MT5_GATEWAY=mock`. It cannot
+control the Windows MetaTrader 5 terminal through the official Python IPC
+package merely because Docker Desktop is running on Windows.
+
+Real execution requires a later production adapter:
+
+1. run the worker natively with Windows Python beside MT5;
+2. build a deliberate Windows host bridge; or
+3. install an MQL5 Expert Advisor that consumes the durable queue.
+
+Do not enable real-money trading until broker idempotency/reconciliation,
+restart recovery, and demo-account ladder tests have passed.
