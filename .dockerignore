@@ -1,0 +1,33 @@
+# Web image build context: everything the Next build does not need.
+node_modules
+.next
+dist
+out
+
+# The backend has its own image and build context.
+backend
+.venv
+__pycache__
+*.py[cod]
+
+# Local state and secrets
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite*
+data
+*.key
+
+# Tooling and docs
+.git
+.gitignore
+.vscode
+.idea
+.kiro
+docs
+*.md
+!README.md
+Dockerfile
+.dockerignore
+docker-compose*.yml
