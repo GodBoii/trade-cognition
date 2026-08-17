@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.key
+secrets/
+
+# Databases
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+data/
+
+# Node / Next.js (the web app lives at the repository root)
+node_modules/
+.next/
+out/
+dist/
+*.local
+*.tsbuildinfo
+next-env.d.ts
+
+# Deployment
+.vercel
+.netlify
+
+# Editors / OS
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
