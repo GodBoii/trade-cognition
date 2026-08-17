@@ -192,7 +192,7 @@ class RiskProfileUpdate(BaseModel):
     lot_rule_mode: LotRuleMode = LotRuleMode.STRICT
     capital_basis: CapitalBasis = CapitalBasis.BALANCE
     fixed_capital: float = Field(default=0.0, ge=0)
-    ladder_preset: LadderPreset = LadderPreset.STANDARD_1_2_3
+    ladder_preset: LadderPreset = LadderPreset.RUNNER_1_2_3
     max_concurrent_positions: int = Field(default=0, ge=0, le=100)
     max_daily_loss_pct: float = Field(default=0.0, ge=0, le=100)
     margin_utilisation_cap_pct: float = Field(default=50.0, ge=0, le=100)

@@ -81,6 +81,11 @@ class Mt5AccountRow(Base, TimestampMixin):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
+    #: Stable bridge to ``public.mt5_connections.id``. The external row stores
+    #: no broker password; mock credentials remain encrypted in local SQLite.
+    external_connection_id: Mapped[str | None] = mapped_column(
+        String(36), unique=True, index=True, default=None
+    )
     label: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     login: Mapped[int] = mapped_column(Integer, nullable=False)
     server: Mapped[str] = mapped_column(String(160), nullable=False)
@@ -129,7 +134,7 @@ class RiskProfileRow(Base, TimestampMixin):
     )
     fixed_capital: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     ladder_preset: Mapped[str] = mapped_column(
-        String(32), default=LadderPreset.STANDARD_1_2_3.value, nullable=False
+        String(32), default=LadderPreset.RUNNER_1_2_3.value, nullable=False
     )
     max_concurrent_positions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     max_daily_loss_pct: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
@@ -184,6 +189,11 @@ class ManagedTrade(Base, TimestampMixin):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    #: Full durable bridge to ``public.trade_intents.id`` for asynchronous
+    #: lifecycle reporting. Legacy/browser-created local trades leave it NULL.
+    external_intent_id: Mapped[str | None] = mapped_column(
+        String(36), unique=True, index=True, default=None
+    )
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
@@ -210,7 +220,7 @@ class ManagedTrade(Base, TimestampMixin):
     initial_volume: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     remaining_volume: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     ladder_preset: Mapped[str] = mapped_column(
-        String(32), default=LadderPreset.STANDARD_1_2_3.value, nullable=False
+        String(32), default=LadderPreset.RUNNER_1_2_3.value, nullable=False
     )
 
     capital_at_entry: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)

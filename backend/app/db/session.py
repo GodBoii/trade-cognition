@@ -97,6 +97,8 @@ def init_db(settings: Settings | None = None) -> None:
     engine = get_engine(settings)
     Base.metadata.create_all(bind=engine)
     _upgrade_sqlite_users_table(engine)
+    _upgrade_sqlite_mt5_accounts_table(engine)
+    _upgrade_sqlite_managed_trades_table(engine)
     log.info("Database schema verified (%s tables)", len(Base.metadata.tables))
 
 
@@ -116,6 +118,42 @@ def _upgrade_sqlite_users_table(engine: Engine) -> None:
             "ON users (supabase_user_id)"
         )
     log.info("Added users.supabase_user_id to the existing SQLite database")
+
+
+def _upgrade_sqlite_mt5_accounts_table(engine: Engine) -> None:
+    """Add the Supabase connection bridge to pre-existing Docker volumes."""
+    if engine.dialect.name != "sqlite" or not inspect(engine).has_table("mt5_accounts"):
+        return
+    columns = {column["name"] for column in inspect(engine).get_columns("mt5_accounts")}
+    if "external_connection_id" in columns:
+        return
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "ALTER TABLE mt5_accounts ADD COLUMN external_connection_id VARCHAR(36)"
+        )
+        connection.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_mt5_accounts_external_connection_id "
+            "ON mt5_accounts (external_connection_id)"
+        )
+    log.info("Added mt5_accounts.external_connection_id to the existing SQLite database")
+
+
+def _upgrade_sqlite_managed_trades_table(engine: Engine) -> None:
+    """Add the Supabase intent bridge to pre-existing Docker volumes."""
+    if engine.dialect.name != "sqlite" or not inspect(engine).has_table("managed_trades"):
+        return
+    columns = {column["name"] for column in inspect(engine).get_columns("managed_trades")}
+    if "external_intent_id" in columns:
+        return
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "ALTER TABLE managed_trades ADD COLUMN external_intent_id VARCHAR(36)"
+        )
+        connection.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_managed_trades_external_intent_id "
+            "ON managed_trades (external_intent_id)"
+        )
+    log.info("Added managed_trades.external_intent_id to the existing SQLite database")
 
 
 @contextmanager
