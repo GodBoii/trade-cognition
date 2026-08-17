@@ -154,8 +154,8 @@ export default function SignInView() {
         </div>
 
         <p className="tiny faint mt mb-0">
-          This platform stores your MT5 password encrypted so it can place and manage orders on your
-          behalf. Use a demo account until you trust the behaviour.
+          Sign in to configure your discipline rules and queue trade plans. MT5 credentials stay
+          outside the browser; use a demo account while validating the execution worker.
         </p>
       </div>
     </div>
