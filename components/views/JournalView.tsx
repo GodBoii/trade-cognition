@@ -1,190 +1,89 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
-
-import { api } from "@/lib/api/client";
-import type { DecisionDetail } from "@/lib/api/types";
-import { Badge, Card, Empty, ErrorBanner, SideBadge, Spinner } from "@/components/ui";
-import { dateTime, lots, money, percent, ratio, time } from "@/lib/format";
-import { useAsync } from "@/lib/useAsync";
-
-type Filter = "all" | "approved" | "rejected";
+import { Badge, Card, Empty, ErrorBanner, Spinner } from "@/components/ui";
+import { dateTime } from "@/lib/format";
+import { useTrading } from "@/state/trading";
 
 export default function JournalView() {
-  const [filter, setFilter] = useState<Filter>("all");
-  const [selected, setSelected] = useState<DecisionDetail | null>(null);
-  const [detailError, setDetailError] = useState<unknown>(null);
-
-  const decisions = useAsync(
-    () =>
-      api.decisions({
-        approved: filter === "all" ? undefined : filter === "approved",
-        limit: 200,
-      }),
-    [filter],
-  );
-  const events = useAsync(() => api.events({ limit: 120 }), []);
-
-  const open = async (id: number) => {
-    setDetailError(null);
-    try {
-      setSelected(await api.decision(id));
-    } catch (cause) {
-      setDetailError(cause);
-    }
-  };
+  const { recentEvents, recentIntents, loading, error, refresh } = useTrading();
+  const rejected = recentIntents.filter((item) => item.status === "rejected").length;
+  const expired = recentIntents.filter((item) => item.status === "expired").length;
 
   return (
     <>
       <div className="page-head">
         <div>
-          <h1>Journal</h1>
+          <h1>Execution journal</h1>
           <p>
-            Every pre-trade decision, including the entries the rules refused. This is the record of
-            what the platform saw and why it acted.
+            Append-only worker events and durable decisions from Supabase. Rejections and expiry are
+            recorded outcomes, not hidden transport errors.
           </p>
         </div>
-        <div className="segmented" style={{ maxWidth: 300 }}>
-          {(["all", "approved", "rejected"] as Filter[]).map((option) => (
-            <button
-              key={option}
-              type="button"
-              className={filter === option ? "on-long" : ""}
-              onClick={() => setFilter(option)}
-              aria-pressed={filter === option}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
+        <button className="btn btn-sm" onClick={() => void refresh()} disabled={loading}>
+          {loading ? "Refreshing..." : "Refresh"}
+        </button>
       </div>
 
-      <ErrorBanner error={decisions.error} />
-      <ErrorBanner error={detailError} />
+      <ErrorBanner error={error} />
 
-      <Card title="Decisions">
-        {decisions.loading ? (
-          <Spinner label="loading decisions" />
-        ) : (decisions.data ?? []).length === 0 ? (
-          <Empty>No decisions recorded for this filter.</Empty>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>When</th>
-                  <th>Symbol</th>
-                  <th>Side</th>
-                  <th className="num">Lots</th>
-                  <th className="num">Risk</th>
-                  <th className="num">% cap</th>
-                  <th className="num">R/R</th>
-                  <th>Verdict</th>
-                  <th>Reason</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(decisions.data ?? []).map((decision) => (
-                  <tr key={decision.id} className="clickable" onClick={() => void open(decision.id)}>
-                    <td className="small nowrap">{dateTime(decision.created_at)}</td>
-                    <td className="strong">{decision.symbol}</td>
-                    <td>
-                      <SideBadge side={decision.side} />
-                    </td>
-                    <td className="num">{lots(decision.volume)}</td>
-                    <td className="num">{money(decision.max_loss)}</td>
-                    <td className="num">{percent(decision.risk_pct)}</td>
-                    <td className="num">{ratio(decision.reward_risk)}</td>
-                    <td>
-                      {decision.approved ? (
-                        <Badge tone={decision.executed ? "ok" : "warn"}>
-                          {decision.executed ? "executed" : "approved"}
-                        </Badge>
-                      ) : (
-                        <Badge tone="danger">blocked</Badge>
-                      )}
-                    </td>
-                    <td className="small">
-                      {decision.violation_codes ? (
-                        <span className="mono tiny">{decision.violation_codes}</span>
-                      ) : (
-                        <span className="faint">—</span>
-                      )}
-                      {decision.trade_id && (
-                        <>
-                          {" "}
-                          <Link href={`/trades/${decision.trade_id}`}>
-                        trade #{decision.trade_id}
-                      </Link>
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        <p className="tiny faint mb-0 mt">Select a row to see every rule check for that decision.</p>
-      </Card>
-
-      {selected && (
-        <div className="mt">
-          <Card
-            title={`Decision #${selected.id} — ${selected.symbol} ${selected.side}`}
-            actions={
-              <button className="btn btn-sm" onClick={() => setSelected(null)}>
-                Close
-              </button>
-            }
-          >
-            <p className="small muted">{selected.summary}</p>
-            {selected.checks.map((check) => (
-              <div className="rule" key={check.code}>
-                <div className={`rule-icon ${check.passed ? "pos" : "neg"}`} aria-hidden="true">
-                  {check.passed ? "\u2713" : "\u2717"}
-                </div>
-                <div className="rule-body">
-                  <div className="rule-name">{check.rule}</div>
-                  <div className="rule-msg">{check.message}</div>
-                  <div className="rule-code">{check.code}</div>
-                </div>
-              </div>
-            ))}
-          </Card>
-        </div>
-      )}
+      <div className="grid grid-3">
+        <Card title="Events"><div className="stat-value">{recentEvents.length}</div></Card>
+        <Card title="Rule rejections"><div className="stat-value">{rejected}</div></Card>
+        <Card title="Expired instructions"><div className="stat-value">{expired}</div></Card>
+      </div>
 
       <div className="mt">
-        <Card title="Activity" hint="Orders, partial exits, stop moves and reconciliations">
-          {events.loading ? (
-            <Spinner label="loading activity" />
-          ) : (events.data ?? []).length === 0 ? (
-            <Empty>Nothing has happened yet.</Empty>
+        <Card title="Activity" actions={<Badge tone="muted">latest {recentEvents.length}</Badge>}>
+          {loading && recentEvents.length === 0 ? (
+            <Spinner label="loading audit events" />
+          ) : recentEvents.length === 0 ? (
+            <Empty>
+              No worker events yet. Pair a worker and submit a trade instruction to begin the audit
+              trail.
+            </Empty>
           ) : (
-            <div className="event-list">
-              {(events.data ?? []).map((event) => (
-                <div className="event" key={event.id}>
-                  <span className="event-time">{time(event.created_at)}</span>
-                  <span>
-                    <Badge tone="muted">{event.event_type.replace(/_/g, " ")}</Badge>{" "}
-                    {event.message}
-                    {event.trade_id && (
-                      <>
-                        {" "}
-                        <Link className="tiny" href={`/trades/${event.trade_id}`}>
-                          #{event.trade_id}
-                        </Link>
-                      </>
-                    )}
-                  </span>
-                </div>
-              ))}
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Time</th><th>Event</th><th>Message</th><th>Intent</th></tr>
+                </thead>
+                <tbody>
+                  {recentEvents.map((event) => (
+                    <tr key={event.id}>
+                      <td className="small nowrap">{dateTime(event.created_at)}</td>
+                      <td><EventBadge eventType={event.event_type} /></td>
+                      <td className="small">{event.message || "-"}</td>
+                      <td className="mono tiny">{event.intent_id?.slice(0, 8) ?? "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </Card>
       </div>
+
+      <div className="mt">
+        <Card title="Audit guarantees">
+          <ul className="small muted" style={{ margin: 0, paddingLeft: 18 }}>
+            <li>The browser cannot insert, edit, or delete worker audit events.</li>
+            <li>Every claim is leased and fenced; stale workers cannot overwrite a later claim.</li>
+            <li>Broker execution still needs local receipt and reconciliation hardening before live use.</li>
+          </ul>
+        </Card>
+      </div>
     </>
   );
+}
+
+function EventBadge({ eventType }: { eventType: string }) {
+  const lower = eventType.toLowerCase();
+  const tone = lower.includes("failed") || lower.includes("rejected")
+    ? "danger"
+    : lower.includes("succeeded") || lower.includes("filled") || lower.includes("closed")
+      ? "ok"
+      : lower.includes("expired")
+        ? "muted"
+        : "info";
+  return <Badge tone={tone}>{eventType.replace(/_/g, " ")}</Badge>;
 }
