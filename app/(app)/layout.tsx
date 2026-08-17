@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 
-import ConnectAccountView from "@/components/views/ConnectAccountView";
 import { Sidebar } from "@/components/Sidebar";
 import { Spinner } from "@/components/ui";
 import { useAuth } from "@/state/auth";
@@ -11,13 +10,12 @@ import { useAuth } from "@/state/auth";
 /**
  * Shell for every authenticated screen.
  *
- * Two gates before any page renders:
- *  1. no session -> redirect to /login;
- *  2. no MT5 account -> the connection screen replaces the app, because without
- *     a broker connection every other page has nothing to show.
+ * Supabase authentication is the only application-level gate. MT5/worker
+ * connectivity is feature state: an offline worker must never make the website
+ * unusable or turn a valid Supabase session into a logged-out user.
  */
 export default function AppLayout({ children }: { children: ReactNode }) {
-  const { ready, user, accounts } = useAuth();
+  const { ready, user } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -28,17 +26,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     return (
       <div className="auth-shell">
         <Spinner label={ready ? "redirecting to sign in" : "starting Trade Cognition"} />
-      </div>
-    );
-  }
-
-  if (accounts.length === 0) {
-    return (
-      <div className="app">
-        <Sidebar minimal />
-        <main className="main">
-          <ConnectAccountView />
-        </main>
       </div>
     );
   }

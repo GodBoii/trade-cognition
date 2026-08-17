@@ -3,10 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { api } from "@/lib/api/client";
-import { Badge } from "@/components/ui";
-import { useAsync } from "@/lib/useAsync";
+import { Badge, type BadgeTone } from "@/components/ui";
 import { useAuth } from "@/state/auth";
+import { useTrading, type TradingStatus } from "@/state/trading";
 
 const LINKS = [
   { href: "/", label: "Dashboard" },
@@ -17,10 +16,28 @@ const LINKS = [
   { href: "/accounts", label: "Accounts" },
 ] as const;
 
+const STATUS_LABEL: Record<TradingStatus, string> = {
+  idle: "worker unknown",
+  loading: "checking worker",
+  error: "status unavailable",
+  unpaired: "MT5 not paired",
+  pending: "pairing pending",
+  online: "worker online",
+  stale: "worker stale",
+  offline: "worker offline",
+};
+
+function statusTone(status: TradingStatus): BadgeTone {
+  if (status === "online") return "ok";
+  if (status === "error") return "danger";
+  if (status === "loading" || status === "idle") return "muted";
+  return "warn";
+}
+
 export function Sidebar({ minimal = false }: { minimal?: boolean }) {
-  const { user, accounts, accountId, selectAccount, signOut } = useAuth();
+  const { user, signOut } = useAuth();
+  const { connections, connectionId, connection, status, selectConnection } = useTrading();
   const pathname = usePathname();
-  const health = useAsync(() => api.health(), []);
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -47,16 +64,16 @@ export function Sidebar({ minimal = false }: { minimal?: boolean }) {
         </nav>
       )}
 
-      {accounts.length > 1 && (
+      {connections.length > 1 && (
         <label className="field" style={{ marginBottom: 0 }}>
           <span>Active account</span>
           <select
-            value={accountId ?? ""}
-            onChange={(event) => selectAccount(Number(event.target.value))}
+            value={connectionId ?? ""}
+            onChange={(event) => selectConnection(event.target.value)}
           >
-            {accounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.login} — {account.server}
+            {connections.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.mt5_login ?? "Pending"} — {item.server || item.label}
               </option>
             ))}
           </select>
@@ -64,29 +81,24 @@ export function Sidebar({ minimal = false }: { minimal?: boolean }) {
       )}
 
       <div className="sidebar-footer">
-        {health.data && (
-          <div className="stack-sm">
-            <div className="inline">
-              <Badge tone={health.data.mt5_gateway === "real" ? "ok" : "warn"}>
-                {health.data.mt5_gateway === "real" ? "live MT5" : "simulated MT5"}
+        <div className="stack-sm">
+          <div className="inline">
+            <Badge tone={statusTone(status)}>{STATUS_LABEL[status]}</Badge>
+            {connection && (
+              <Badge tone={connection.is_enabled ? "info" : "muted"}>
+                {connection.is_enabled ? "automation enabled" : "automation paused"}
               </Badge>
-              <Badge tone={health.data.monitor_running ? "ok" : "danger"}>
-                {health.data.monitor_running ? "monitor on" : "monitor off"}
-              </Badge>
-            </div>
-            <span className="tiny">
-              v{health.data.version} · {health.data.environment}
-            </span>
-            {health.data.mt5_gateway !== "real" && (
-              <span className="tiny">
-                Orders are simulated. Set <code>TC_MT5_GATEWAY=real</code> to trade a terminal.
-              </span>
             )}
           </div>
-        )}
+          <span className="tiny">
+            {connection?.last_seen_at
+              ? `Last MT5 update ${new Date(connection.last_seen_at).toLocaleString()}`
+              : "The website remains available while your local worker is offline."}
+          </span>
+        </div>
         <div className="between">
-          <span className="tiny">{user?.display_name || user?.email}</span>
-          <button className="btn btn-sm" onClick={signOut}>
+          <span className="tiny">{user?.displayName || user?.email}</span>
+          <button className="btn btn-sm" onClick={() => void signOut()}>
             Sign out
           </button>
         </div>

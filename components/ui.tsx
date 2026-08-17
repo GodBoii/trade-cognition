@@ -3,7 +3,6 @@
 /** Small presentational primitives shared across pages. */
 
 import type { ReactNode } from "react";
-import { ApiRequestError } from "@/lib/api/client";
 
 export function Card({
   title,
@@ -75,16 +74,9 @@ export function Banner({
   );
 }
 
-/** Renders any thrown value as a readable banner, preserving the error code. */
+/** Renders errors from Supabase, browser APIs, or the local UI uniformly. */
 export function ErrorBanner({ error }: { error: unknown }) {
   if (!error) return null;
-  if (error instanceof ApiRequestError) {
-    return (
-      <Banner tone="error" title={error.message}>
-        <span className="tiny mono">{error.code}</span>
-      </Banner>
-    );
-  }
   return <Banner tone="error">{error instanceof Error ? error.message : String(error)}</Banner>;
 }
 
