@@ -1,34 +1,38 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
+import { useMemo, useState } from "react";
 
-import { api } from "@/lib/api/client";
-import { Badge, Card, Empty, ErrorBanner, SideBadge, Spinner, StatusBadge } from "@/components/ui";
-import { LadderProgress } from "@/components/LadderProgress";
-import { dateTime, guessDigits, lots, money, percent, price, ratio, signedMoney } from "@/lib/format";
-import { useAsync } from "@/lib/useAsync";
+import { Badge, Card, Empty, ErrorBanner, SideBadge, Spinner } from "@/components/ui";
+import { dateTime } from "@/lib/format";
+import type { TradeIntentStatus } from "@/lib/supabase/types";
+import { useTrading } from "@/state/trading";
+
+const ACTIVE = new Set<TradeIntentStatus>([
+  "queued",
+  "claimed",
+  "validating",
+  "submitted",
+  "open",
+  "scaling",
+]);
 
 export default function TradesView() {
+  const { recentIntents, recentCommands, loading, error, refresh, connections } = useTrading();
   const [activeOnly, setActiveOnly] = useState(false);
-  const { data, loading, error, reload } = useAsync(
-    () => api.trades({ active_only: activeOnly, limit: 200 }),
-    [activeOnly],
+  const trades = useMemo(
+    () => (activeOnly ? recentIntents.filter((item) => ACTIVE.has(item.status)) : recentIntents),
+    [activeOnly, recentIntents],
   );
-
-  const trades = data ?? [];
-  const realised = trades
-    .filter((t) => t.status === "closed")
-    .reduce((total, t) => total + t.realised_pl, 0);
 
   return (
     <>
       <div className="page-head">
         <div>
-          <h1>Trades</h1>
+          <h1>Trade queue and history</h1>
           <p>
-            Every trade the platform has managed, with the risk it was approved at and what it
-            actually returned.
+            Durable Supabase state. Pending instructions survive browser closure and remain visibly
+            different from broker-submitted trades.
           </p>
         </div>
         <div className="inline">
@@ -36,12 +40,12 @@ export default function TradesView() {
             <input
               type="checkbox"
               checked={activeOnly}
-              onChange={(e) => setActiveOnly(e.target.checked)}
+              onChange={(event) => setActiveOnly(event.target.checked)}
             />
             <span>Active only</span>
           </label>
-          <button className="btn btn-sm" onClick={reload}>
-            Refresh
+          <button className="btn btn-sm" onClick={() => void refresh()} disabled={loading}>
+            {loading ? "Refreshing..." : "Refresh"}
           </button>
         </div>
       </div>
@@ -49,88 +53,56 @@ export default function TradesView() {
       <ErrorBanner error={error} />
 
       <Card
-        title="History"
+        title="Instructions"
         actions={
           <span className="inline">
             <Badge tone="muted">{trades.length}</Badge>
-            {realised !== 0 && (
-              <Badge tone={realised > 0 ? "ok" : "danger"}>
-                {signedMoney(realised, trades[0]?.account_currency ?? "USD")} realised
-              </Badge>
-            )}
+            <Badge tone="info">{recentCommands.filter((item) => item.status === "pending").length} pending</Badge>
           </span>
         }
       >
-        {loading ? (
-          <Spinner label="loading trades" />
+        {loading && recentIntents.length === 0 ? (
+          <Spinner label="loading trade instructions" />
         ) : trades.length === 0 ? (
           <Empty>
-            No trades yet. <Link href="/trade">Plan one</Link>.
+            No trade instructions yet. <Link href="/trade">Plan one</Link>.
           </Empty>
         ) : (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Opened</th>
+                  <th>Created</th>
+                  <th>Account</th>
                   <th>Symbol</th>
                   <th>Side</th>
                   <th>Status</th>
-                  <th className="num">Volume</th>
-                  <th className="num">Entry</th>
-                  <th className="num">Stop</th>
-                  <th className="num">Risk</th>
-                  <th className="num">Result</th>
-                  <th className="num">R</th>
-                  <th>Ladder</th>
-                  <th />
+                  <th>Stop</th>
+                  <th>Execution deadline</th>
+                  <th>Broker ticket</th>
                 </tr>
               </thead>
               <tbody>
                 {trades.map((trade) => {
-                  const digits = guessDigits(trade.entry_price || trade.requested_entry);
-                  const rMultiple =
-                    trade.planned_risk > 0 ? trade.realised_pl / trade.planned_risk : null;
+                  const connection = connections.find((item) => item.id === trade.connection_id);
                   return (
                     <tr key={trade.id}>
-                      <td className="small nowrap">{dateTime(trade.opened_at ?? trade.created_at)}</td>
-                      <td className="strong">{trade.symbol}</td>
+                      <td className="small nowrap">{dateTime(trade.created_at)}</td>
+                      <td className="small">{connection?.label ?? trade.connection_id.slice(0, 8)}</td>
+                      <td className="strong"><Link href={`/trades/${trade.id}`}>{trade.symbol}</Link></td>
+                      <td><SideBadge side={trade.side} /></td>
                       <td>
-                        <SideBadge side={trade.side} />
-                      </td>
-                      <td>
-                        <StatusBadge status={trade.status} />
-                        {trade.close_reason && (
-                          <div className="tiny faint">{trade.close_reason.replace(/_/g, " ")}</div>
-                        )}
+                        <IntentStatus status={trade.status} />
+                        {trade.last_error && <div className="tiny neg">{trade.last_error}</div>}
                       </td>
                       <td className="num">
-                        {lots(trade.remaining_volume)}
-                        <div className="tiny faint">of {lots(trade.initial_volume)}</div>
+                        {trade.stop_loss !== null
+                          ? trade.stop_loss
+                          : `${trade.stop_points ?? "-"} points`}
                       </td>
-                      <td className="num">{price(trade.entry_price, digits)}</td>
-                      <td className="num">{price(trade.current_stop, digits)}</td>
-                      <td className="num">
-                        {money(trade.planned_risk, trade.account_currency)}
-                        <div className="tiny faint">{percent(trade.planned_risk_pct)}</div>
-                      </td>
-                      <td
-                        className={`num ${
-                          trade.realised_pl > 0 ? "pos" : trade.realised_pl < 0 ? "neg" : ""
-                        }`}
-                      >
-                        {trade.realised_pl === 0 && trade.status !== "closed"
-                          ? "-"
-                          : signedMoney(trade.realised_pl, trade.account_currency)}
-                      </td>
-                      <td className="num">{rMultiple === null ? "-" : ratio(rMultiple)}</td>
-                      <td style={{ minWidth: 190 }}>
-                        <LadderProgress trade={trade} />
-                      </td>
-                      <td className="right">
-                        <Link className="btn btn-sm" href={`/trades/${trade.id}`}>
-                          Detail
-                        </Link>
+                      <td className="small nowrap">{dateTime(trade.execute_before)}</td>
+                      <td className="mono small">
+                        {trade.broker_position_ticket ?? trade.broker_order_ticket ?? "-"}
                       </td>
                     </tr>
                   );
@@ -140,6 +112,28 @@ export default function TradesView() {
           </div>
         )}
       </Card>
+
+      <div className="mt">
+        <Card title="Why these states matter">
+          <p className="small muted mb-0">
+            <strong>Queued</strong> is only a saved request. A broker order exists only after the
+            worker records <strong>submitted</strong> or <strong>open</strong> with a ticket. Expired,
+            rejected, failed, and cancelled rows are retained for discipline and audit history.
+          </p>
+        </Card>
+      </div>
     </>
   );
+}
+
+function IntentStatus({ status }: { status: TradeIntentStatus }) {
+  const tone =
+    status === "open" || status === "submitted" || status === "closed"
+      ? "ok"
+      : status === "rejected" || status === "failed"
+        ? "danger"
+        : status === "cancelled" || status === "expired"
+          ? "muted"
+          : "warn";
+  return <Badge tone={tone}>{status}</Badge>;
 }
