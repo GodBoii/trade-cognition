@@ -30,7 +30,7 @@ class RiskProfile:
     fixed_capital: float = 0.0
 
     # --- Profit taking -----------------------------------------------------
-    ladder_preset: LadderPreset = LadderPreset.STANDARD_1_2_3
+    ladder_preset: LadderPreset = LadderPreset.RUNNER_1_2_3
 
     # --- Additional portfolio guards (0 / False disables the guard) --------
     max_concurrent_positions: int = 0

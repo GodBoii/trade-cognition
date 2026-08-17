@@ -147,16 +147,18 @@ def test_targets_sit_at_one_two_and_three_r(eurusd, eurusd_tick, account):
 
 def test_expected_profit_and_blended_reward_risk(eurusd, eurusd_tick, account):
     plan = plan_for(eurusd, eurusd_tick, account, side=Side.BUY, sl_points=500)
-    tp1, tp2, _ = plan.stages
+    tp1, tp2, tp3 = plan.stages
 
     assert tp1.volume == pytest.approx(0.1)
     assert tp1.money_profit == pytest.approx(50.0)
-    assert tp2.volume == pytest.approx(0.1)
-    assert tp2.money_profit == pytest.approx(100.0)
-    assert plan.expected_profit == pytest.approx(150.0)
-    # Half out at 1R and half at 2R is a 1.5R plan, not a 3R plan.
-    assert plan.reward_risk_blended == pytest.approx(1.5)
-    assert plan.reward_risk_final == pytest.approx(2.0)
+    assert tp2.volume == pytest.approx(0.05)
+    assert tp2.money_profit == pytest.approx(50.0)
+    assert tp3.volume == pytest.approx(0.05)
+    assert tp3.money_profit == pytest.approx(75.0)
+    assert plan.expected_profit == pytest.approx(175.0)
+    # 50% at 1R, 25% at 2R and 25% at 3R is a blended 1.75R plan.
+    assert plan.reward_risk_blended == pytest.approx(1.75)
+    assert plan.reward_risk_final == pytest.approx(3.0)
 
 
 def test_stop_management_halves_risk_then_locks_in_profit(eurusd, eurusd_tick, account):
@@ -169,10 +171,10 @@ def test_stop_management_halves_risk_then_locks_in_profit(eurusd, eurusd_tick, a
     assert tp1.locked_in_money == pytest.approx(25.0)
     assert tp1.remaining_volume == pytest.approx(0.1)
 
-    # TP2: stop to the TP1 price, and the position is flat afterwards.
+    # TP2: stop to TP1 while the final 25% runner remains for TP3.
     assert tp2.sl_after == pytest.approx(tp1.target_price)
-    assert tp2.remaining_volume == pytest.approx(0.0)
-    assert tp2.locked_in_money == pytest.approx(150.0)
+    assert tp2.remaining_volume == pytest.approx(0.05)
+    assert tp2.locked_in_money == pytest.approx(125.0)
 
 
 def test_runner_ladder_carries_volume_to_three_r(eurusd, eurusd_tick, account):
@@ -214,7 +216,10 @@ def test_coarse_lot_grid_is_respected(us500, account):
 
     assert plan.volume == pytest.approx(0.2)  # 0.20 raw, already on the 0.1 grid
     assert plan.stages[0].volume == pytest.approx(0.1)
-    assert plan.stages[1].volume == pytest.approx(0.1)
+    # A 25% tranche is below this symbol's 0.1 minimum, so TP2 is skipped and
+    # the tradable remainder is carried to the final TP3 rung.
+    assert plan.stages[1].volume == pytest.approx(0.0)
+    assert plan.stages[2].volume == pytest.approx(0.1)
 
 
 def test_symbol_without_value_information_is_refused(account, eurusd_tick):

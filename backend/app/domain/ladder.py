@@ -130,7 +130,11 @@ LADDERS: dict[LadderPreset, Ladder] = {
     LadderPreset.RUNNER_1_2_3: RUNNER_1_2_3,
 }
 
-DEFAULT_LADDER = STANDARD_1_2_3
+# The product requires a meaningful final 1:3 target.  The written "remaining
+# 50% at TP2" wording would exhaust the position before TP3, so the coherent
+# default is 50% / 25% / 25%.  The legacy standard preset remains available for
+# users who intentionally want to be fully out by TP2.
+DEFAULT_LADDER = RUNNER_1_2_3
 
 
 def get_ladder(preset: LadderPreset | str | None) -> Ladder:

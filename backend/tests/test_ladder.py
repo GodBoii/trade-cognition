@@ -74,8 +74,8 @@ def test_stage_definitions_match_the_house_rules():
     assert tp3.final
 
 
-def test_get_ladder_falls_back_to_the_default():
-    assert get_ladder(None) is STANDARD_1_2_3
-    assert get_ladder("nonsense") is STANDARD_1_2_3
+def test_get_ladder_falls_back_to_the_runner_default():
+    assert get_ladder(None) is RUNNER_1_2_3
+    assert get_ladder("nonsense") is RUNNER_1_2_3
     assert get_ladder(LadderPreset.RUNNER_1_2_3) is RUNNER_1_2_3
     assert get_ladder("runner_1_2_3") is RUNNER_1_2_3
