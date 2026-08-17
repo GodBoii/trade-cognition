@@ -1,0 +1,25 @@
+# Backend image build context.
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+htmlcov
+.coverage
+
+# Local state: the database and the credential key belong in a volume, never in
+# an image layer.
+data
+*.db
+*.sqlite*
+*.key
+.env
+.env.*
+!.env.example
+
+.git
+*.md
+Dockerfile
+.dockerignore
