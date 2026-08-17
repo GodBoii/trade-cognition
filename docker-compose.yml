@@ -27,6 +27,17 @@ services:
       TC_SUPABASE_ANON_KEY: ${TC_SUPABASE_ANON_KEY:?set TC_SUPABASE_ANON_KEY in .env}
       TC_SUPABASE_AUTH_CACHE_SECONDS: ${TC_SUPABASE_AUTH_CACHE_SECONDS:-30}
 
+      # Durable command queue. Enable after pairing a scoped worker token in
+      # the website. Linux Docker executes the existing mock trading engine;
+      # real MetaTrader 5 remains intentionally disabled in this container.
+      TC_SUPABASE_QUEUE_ENABLED: ${TC_SUPABASE_QUEUE_ENABLED:-false}
+      TC_WORKER_TOKEN: ${TC_WORKER_TOKEN:-}
+      TC_WORKER_POLL_INTERVAL_SECONDS: ${TC_WORKER_POLL_INTERVAL_SECONDS:-2.0}
+      TC_WORKER_HEARTBEAT_INTERVAL_SECONDS: ${TC_WORKER_HEARTBEAT_INTERVAL_SECONDS:-15.0}
+      TC_WORKER_CLAIM_LEASE_SECONDS: ${TC_WORKER_CLAIM_LEASE_SECONDS:-90}
+      TC_WORKER_BATCH_SIZE: ${TC_WORKER_BATCH_SIZE:-1}
+      TC_WORKER_BACKOFF_MAX_SECONDS: ${TC_WORKER_BACKOFF_MAX_SECONDS:-60.0}
+
       # No default: changing this key would orphan encrypted MT5 credentials.
       TC_CREDENTIAL_ENCRYPTION_KEY: ${TC_CREDENTIAL_ENCRYPTION_KEY:?set TC_CREDENTIAL_ENCRYPTION_KEY in .env}
 
@@ -40,12 +51,12 @@ services:
       TC_MONITOR_INTERVAL_SECONDS: ${TC_MONITOR_INTERVAL_SECONDS:-2.0}
       TC_ALLOW_REGISTRATION: "false"
 
-      # Vercel calls this API directly, so include the exact deployed origin(s).
+      # Legacy local FastAPI UI calls only; Vercel no longer depends on this API.
       TC_CORS_ORIGINS: ${TC_CORS_ORIGINS:-http://localhost:3000}
 
       TC_DEFAULT_LOTS_PER_1000: ${TC_DEFAULT_LOTS_PER_1000:-0.02}
       TC_DEFAULT_MAX_RISK_PCT: ${TC_DEFAULT_MAX_RISK_PCT:-2.0}
-      TC_DEFAULT_LADDER: ${TC_DEFAULT_LADDER:-standard_1_2_3}
+      TC_DEFAULT_LADDER: ${TC_DEFAULT_LADDER:-runner_1_2_3}
     volumes:
       - backend-data:/data
     ports:
