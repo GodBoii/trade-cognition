@@ -1,0 +1,3 @@
+# Trade Cognition is a private trading console. Nothing here should be indexed.
+User-agent: *
+Disallow: /
