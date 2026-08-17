@@ -1,170 +1,77 @@
 "use client";
 
-/**
- * The trade ticket.
- *
- * Every parameter change re-runs `POST /api/calculator/preview` (debounced), so
- * the risk figures and the rule verdict on screen are produced by the same code
- * path that will authorise the order. The submit button is disabled while any
- * rule blocks the entry - the platform's whole purpose is that this cannot be
- * clicked through.
- */
+import Link from "next/link";
+import { useMemo, useRef, useState } from "react";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-
-import { api } from "@/lib/api/client";
-import type {
-  Assessment,
-  LadderPreset,
-  Side,
-  StopScanRow,
-  Submission,
-  SymbolBrief,
-} from "@/lib/api/types";
-import { LadderTable, PlanWarnings, RiskSummary, RuleChecklist } from "@/components/PlanView";
-import { Badge, Banner, Card, ErrorBanner, Field, Spinner } from "@/components/ui";
-import { lots, money, percent, points, price } from "@/lib/format";
-import { useAsync, useDebounced } from "@/lib/useAsync";
-import { useAuth } from "@/state/auth";
+import { Badge, Banner, Card, ErrorBanner, Field } from "@/components/ui";
+import { enqueueTradeIntent } from "@/lib/supabase/data";
+import type { TradeIntent } from "@/lib/supabase/types";
+import { useTrading } from "@/state/trading";
 
 type StopMode = "points" | "price";
 
 export default function TradeTicketView() {
-  const router = useRouter();
-  const { accountId } = useAuth();
-
+  const { connection, status, rules, refresh } = useTrading();
   const [symbol, setSymbol] = useState("EURUSD");
-  const [search, setSearch] = useState("");
-  const [side, setSide] = useState<Side>("buy");
+  const [side, setSide] = useState<"buy" | "sell">("buy");
+  const [orderKind, setOrderKind] = useState<"market" | "limit" | "stop">("market");
+  const [entryPrice, setEntryPrice] = useState("");
   const [stopMode, setStopMode] = useState<StopMode>("points");
   const [stopPoints, setStopPoints] = useState("500");
-  const [stopPrice, setStopPrice] = useState("");
-  const [entryOverride, setEntryOverride] = useState("");
-  const [volumeOverride, setVolumeOverride] = useState("");
-  const [ladderPreset, setLadderPreset] = useState<LadderPreset | "">("");
+  const [stopLoss, setStopLoss] = useState("");
   const [comment, setComment] = useState("");
-  const [override, setOverride] = useState(false);
-
-  const [assessment, setAssessment] = useState<Assessment | null>(null);
-  const [previewError, setPreviewError] = useState<unknown>(null);
-  const [previewing, setPreviewing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<unknown>(null);
-  const [result, setResult] = useState<Submission | null>(null);
-  const [scan, setScan] = useState<StopScanRow[] | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [result, setResult] = useState<TradeIntent | null>(null);
+  const requestId = useRef<string | null>(null);
 
-  const symbols = useAsync(() => api.symbols(undefined, accountId ?? undefined), [accountId]);
-  const spec = useAsync(
-    () => api.symbolSpec(symbol, accountId ?? undefined),
-    [symbol, accountId],
-  );
-  const profile = useAsync(() => api.profile(), []);
-
-  // The request body, memoised so the preview only re-runs on real changes.
-  const request = useMemo(() => {
-    const stopFromPoints = stopMode === "points" ? Number(stopPoints) : null;
-    const stopFromPrice = stopMode === "price" ? Number(stopPrice) : null;
-    return {
-      symbol,
-      side,
-      stop_points: stopFromPoints && stopFromPoints > 0 ? stopFromPoints : null,
-      stop_loss: stopFromPrice && stopFromPrice > 0 ? stopFromPrice : null,
-      entry_price: Number(entryOverride) > 0 ? Number(entryOverride) : null,
-      volume: Number(volumeOverride) > 0 ? Number(volumeOverride) : null,
-      ladder_preset: ladderPreset === "" ? null : ladderPreset,
-      account_id: accountId,
-      override,
-      comment,
-    };
-  }, [
-    symbol,
-    side,
-    stopMode,
-    stopPoints,
-    stopPrice,
-    entryOverride,
-    volumeOverride,
-    ladderPreset,
-    accountId,
-    override,
-    comment,
-  ]);
-
-  const debounced = useDebounced(request, 350);
-  const abortRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    const hasStop = Boolean(debounced.stop_points || debounced.stop_loss);
-    if (!debounced.symbol || !hasStop) {
-      setAssessment(null);
-      setPreviewError(null);
-      return;
-    }
-
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setPreviewing(true);
-    api
-      .preview(debounced, controller.signal)
-      .then((next) => {
-        setAssessment(next);
-        setPreviewError(null);
-      })
-      .catch((cause) => {
-        if ((cause as Error).name === "AbortError") return;
-        setAssessment(null);
-        setPreviewError(cause);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setPreviewing(false);
-      });
-
-    return () => controller.abort();
-  }, [debounced]);
-
-  const plan = assessment?.plan ?? null;
-  const rules = assessment?.rules ?? null;
-  const blocked = rules ? !rules.approved : true;
-  const canOverride = Boolean(
-    profile.data?.allow_manual_override &&
-      rules?.checks.some((c) => !c.passed && c.overridable),
+  const numericEntry = Number(entryPrice);
+  const numericStopPoints = Number(stopPoints);
+  const numericStopLoss = Number(stopLoss);
+  const stopValid =
+    stopMode === "points" ? numericStopPoints > 0 : numericStopLoss > 0;
+  const entryRequired = orderKind !== "market";
+  const canSubmit = Boolean(
+    connection?.is_enabled && symbol.trim() && stopValid && (!entryRequired || numericEntry > 0),
   );
 
-  const filtered = (symbols.data ?? []).filter((s) => {
-    const needle = search.trim().toLowerCase();
-    if (!needle) return true;
-    return (
-      s.name.toLowerCase().includes(needle) || s.description.toLowerCase().includes(needle)
-    );
-  });
+  const capital = useMemo(() => {
+    if (!connection) return null;
+    if (rules?.capital_basis === "fixed") return rules.fixed_capital;
+    if (rules?.capital_basis === "equity") return connection.last_equity;
+    return connection.last_balance;
+  }, [connection, rules]);
+  const indicativeVolume = capital && capital > 0 ? (capital / 1000) * 0.02 : null;
+  const maxLoss = capital && capital > 0 ? capital * 0.02 : null;
 
-  const submit = async () => {
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!connection || !canSubmit) return;
     setSubmitting(true);
-    setSubmitError(null);
+    setError(null);
     setResult(null);
+    requestId.current ??= crypto.randomUUID();
     try {
-      const submission = await api.submitTrade(request);
-      setResult(submission);
-      if (submission.executed && submission.trade) {
-        router.push(`/trades/${submission.trade.id}`);
-      }
+      const intent = await enqueueTradeIntent({
+        connectionId: connection.id,
+        clientRequestId: requestId.current,
+        symbol,
+        side,
+        orderKind,
+        requestedEntry: numericEntry > 0 ? numericEntry : null,
+        stopLoss: stopMode === "price" ? numericStopLoss : null,
+        stopPoints: stopMode === "points" ? numericStopPoints : null,
+        requestedVolume: null,
+        comment,
+      });
+      setResult(intent);
+      requestId.current = null;
+      await refresh();
     } catch (cause) {
-      setSubmitError(cause);
+      // Retain the same UUID so retrying after an uncertain network response is idempotent.
+      setError(cause);
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const runScan = async () => {
-    try {
-      const base = Number(stopPoints) || 500;
-      const candidates = [0.25, 0.5, 0.75, 1, 1.5, 2, 3].map((m) => Math.round(base * m));
-      setScan(await api.stopScan(symbol, side, candidates, accountId ?? undefined));
-    } catch (cause) {
-      setPreviewError(cause);
     }
   };
 
@@ -172,365 +79,194 @@ export default function TradeTicketView() {
     <>
       <div className="page-head">
         <div>
-          <h1>New trade</h1>
+          <h1>New trade instruction</h1>
           <p>
-            Enter the parameters; the calculator and every rule run on each change. Nothing reaches
-            the broker until all three rules pass.
+            Save an expiring instruction in Supabase. The local worker uses current MT5 prices,
+            symbol limits, positions, and margin to approve or reject it before execution.
           </p>
         </div>
-        {previewing && <Spinner label="recalculating" />}
+        <Badge tone={status === "online" ? "ok" : "warn"}>worker {status}</Badge>
       </div>
 
-      <div className="grid-ticket">
-        {/* ------------------------------------------------ parameters */}
-        <div className="stack">
-          <Card title="Parameters">
-            <Field label="Derivative">
+      <ErrorBanner error={error} />
+      {!connection && (
+        <Banner tone="warn" title="Pair an MT5 worker first">
+          The full website is available, but a trade cannot be queued until a connection exists. {" "}
+          <Link href="/accounts">Open Accounts</Link>.
+        </Banner>
+      )}
+      {connection && status !== "online" && (
+        <Banner tone="warn" title="The worker is not currently online">
+          You may queue an instruction, but it expires after five minutes. Queued does not mean
+          approved or executed, and a stale instruction will be marked expired.
+        </Banner>
+      )}
+      {result && (
+        <Banner tone="ok" title="Instruction saved durably">
+          <p className="small">
+            <strong>{result.symbol}</strong> is <strong>{result.status}</strong>. Closing this tab
+            will not lose it. The worker still has to validate every rule before execution.
+          </p>
+          <Link className="btn btn-sm" href="/trades">
+            View trade queue
+          </Link>
+        </Banner>
+      )}
+
+      <div className="grid grid-2 mt">
+        <Card title="Instruction">
+          <form onSubmit={submit}>
+            <Field label="MT5 connection">
               <input
                 type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={`Search symbols (${symbol} selected)`}
+                value={
+                  connection
+                    ? `${connection.label} · ${connection.mt5_login ?? "awaiting MT5"}`
+                    : "No connection selected"
+                }
+                readOnly
               />
             </Field>
-            {symbols.loading ? (
-              <Spinner label="loading symbols" />
-            ) : (
-              <div className="scroll-list" style={{ maxHeight: 168 }}>
-                {filtered.slice(0, 60).map((entry) => (
-                  <SymbolOption
-                    key={entry.name}
-                    entry={entry}
-                    selected={entry.name === symbol}
-                    onSelect={() => setSymbol(entry.name)}
-                  />
-                ))}
-                {filtered.length === 0 && <div className="empty">No symbol matches.</div>}
-              </div>
-            )}
 
-            <div className="field mt">
-              <label htmlFor="side-buy">Direction</label>
-              <div className="segmented">
-                <button
-                  id="side-buy"
-                  type="button"
-                  className={side === "buy" ? "on-long" : ""}
-                  onClick={() => setSide("buy")}
-                  aria-pressed={side === "buy"}
+            <Field label="Derivative / symbol" hint="Use the exact MT5 symbol, including broker suffixes">
+              <input
+                value={symbol}
+                onChange={(event) => setSymbol(event.target.value.toUpperCase())}
+                maxLength={40}
+                required
+              />
+            </Field>
+
+            <div className="grid grid-2">
+              <Field label="Side">
+                <select value={side} onChange={(event) => setSide(event.target.value as "buy" | "sell")}>
+                  <option value="buy">Buy</option>
+                  <option value="sell">Sell</option>
+                </select>
+              </Field>
+              <Field label="Order kind">
+                <select
+                  value={orderKind}
+                  onChange={(event) =>
+                    setOrderKind(event.target.value as "market" | "limit" | "stop")
+                  }
                 >
-                  Buy / Long
-                </button>
-                <button
-                  type="button"
-                  className={side === "sell" ? "on-short" : ""}
-                  onClick={() => setSide("sell")}
-                  aria-pressed={side === "sell"}
-                >
-                  Sell / Short
-                </button>
-              </div>
+                  <option value="market">Market</option>
+                  <option value="limit" disabled>
+                    Limit (real MT5 adapter pending)
+                  </option>
+                  <option value="stop" disabled>
+                    Stop order (real MT5 adapter pending)
+                  </option>
+                </select>
+              </Field>
             </div>
 
-            <div className="field">
-              <label htmlFor="stop-mode">Stop-loss</label>
-              <div className="segmented">
-                <button
-                  id="stop-mode"
-                  type="button"
-                  className={stopMode === "points" ? "on-long" : ""}
-                  onClick={() => setStopMode("points")}
-                  aria-pressed={stopMode === "points"}
-                >
-                  Distance
-                </button>
-                <button
-                  type="button"
-                  className={stopMode === "price" ? "on-long" : ""}
-                  onClick={() => setStopMode("price")}
-                  aria-pressed={stopMode === "price"}
-                >
-                  Price
-                </button>
-              </div>
-            </div>
+            <Field
+              label={entryRequired ? "Requested entry price" : "Entry-price reference (optional)"}
+              hint="The worker rejects an invalid or stale requested price"
+            >
+              <input
+                type="number"
+                min={0}
+                step="any"
+                value={entryPrice}
+                onChange={(event) => setEntryPrice(event.target.value)}
+                required={entryRequired}
+              />
+            </Field>
+
+            <Field label="Stop-loss input">
+              <select value={stopMode} onChange={(event) => setStopMode(event.target.value as StopMode)}>
+                <option value="points">Distance in MT5 points</option>
+                <option value="price">Absolute stop price</option>
+              </select>
+            </Field>
 
             {stopMode === "points" ? (
-              <Field
-                label="Distance from entry (points)"
-                hint={
-                  spec.data
-                    ? `1 point = ${spec.data.point}; broker minimum ${spec.data.stops_level_points} points`
-                    : undefined
-                }
-              >
+              <Field label="Stop distance (points)">
                 <input
                   type="number"
-                  value={stopPoints}
-                  onChange={(e) => setStopPoints(e.target.value)}
                   min={1}
                   step={1}
+                  value={stopPoints}
+                  onChange={(event) => setStopPoints(event.target.value)}
+                  required
                 />
               </Field>
             ) : (
-              <Field label="Stop price">
+              <Field label="Stop-loss price">
                 <input
                   type="number"
-                  value={stopPrice}
-                  onChange={(e) => setStopPrice(e.target.value)}
-                  step={spec.data?.tick_size ?? 0.00001}
+                  min={0}
+                  step="any"
+                  value={stopLoss}
+                  onChange={(event) => setStopLoss(event.target.value)}
+                  required
                 />
               </Field>
             )}
 
-            <button className="btn btn-sm" type="button" onClick={() => void runScan()}>
-              Show risk at nearby stops
-            </button>
+            <Field label="Comment" hint="Optional; maximum 48 characters">
+              <input
+                value={comment}
+                onChange={(event) => setComment(event.target.value)}
+                maxLength={48}
+              />
+            </Field>
 
-            <details className="mt">
-              <summary className="small muted" style={{ cursor: "pointer" }}>
-                Advanced
-              </summary>
-              <div className="mt">
-                <Field
-                  label="Entry price"
-                  hint="Leave blank to use the live market price for this side."
-                >
-                  <input
-                    type="number"
-                    value={entryOverride}
-                    onChange={(e) => setEntryOverride(e.target.value)}
-                    step={spec.data?.tick_size ?? 0.00001}
-                  />
-                </Field>
-                <Field
-                  label="Lot size"
-                  hint="Leave blank to use the Rule 2 allocation. A different value is blocked unless overrides are enabled."
-                >
-                  <input
-                    type="number"
-                    value={volumeOverride}
-                    onChange={(e) => setVolumeOverride(e.target.value)}
-                    step={spec.data?.volume_step ?? 0.01}
-                    min={0}
-                  />
-                </Field>
-                <Field label="Profit ladder">
-                  <select
-                    value={ladderPreset}
-                    onChange={(e) => setLadderPreset(e.target.value as LadderPreset | "")}
-                  >
-                    <option value="">Profile default</option>
-                    <option value="standard_1_2_3">Standard 1:1 / 1:2 / 1:3</option>
-                    <option value="runner_1_2_3">Runner 1:1 / 1:2 / 1:3</option>
-                  </select>
-                </Field>
-                <Field label="Comment" hint="Stamped on the MT5 order (31 characters)">
-                  <input
-                    type="text"
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                    maxLength={48}
-                  />
-                </Field>
-              </div>
-            </details>
+            <button
+              className="btn btn-primary btn-block"
+              type="submit"
+              disabled={!canSubmit || submitting}
+            >
+              {submitting ? "Saving instruction..." : "Queue for worker validation"}
+            </button>
+          </form>
+        </Card>
+
+        <div className="stack">
+          <Card title="Pre-trade estimate">
+            {capital === null ? (
+              <p className="muted mb-0">
+                No fresh account snapshot exists. Balance, exact lot step, monetary stop risk,
+                margin, spread, and targets are intentionally not shown as zero.
+              </p>
+            ) : (
+              <dl className="kv">
+                <dt>Last reported capital</dt>
+                <dd>{capital.toFixed(2)} {connection?.currency || ""}</dd>
+                <dt>Formula allocation</dt>
+                <dd>{indicativeVolume?.toFixed(4)} lots before broker rounding</dd>
+                <dt>Maximum stop loss</dt>
+                <dd>{maxLoss?.toFixed(2)} {connection?.currency || ""} (2%)</dd>
+              </dl>
+            )}
+            <p className="tiny faint mb-0 mt">
+              This is an indication from the last Supabase snapshot, not approval. Only the worker
+              can calculate tick-value risk and required margin from live MT5 data.
+            </p>
           </Card>
 
-          {scan && (
-            <Card title="Risk by stop distance" actions={
-              <button className="btn btn-sm" onClick={() => setScan(null)}>
-                Hide
-              </button>
-            }>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th className="num">Points</th>
-                      <th className="num">Stop</th>
-                      <th className="num">Loss</th>
-                      <th className="num">% capital</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {scan.map((row) => (
-                      <tr
-                        key={row.stop_points}
-                        className="clickable"
-                        onClick={() => {
-                          setStopMode("points");
-                          setStopPoints(String(row.stop_points));
-                        }}
-                      >
-                        <td className="num">{row.stop_points}</td>
-                        <td className="num">{price(row.stop_price, spec.data?.digits ?? 5)}</td>
-                        <td className="num">{money(row.loss, plan?.account_currency ?? "USD")}</td>
-                        <td className="num">{percent(row.risk_pct)}</td>
-                        <td>
-                          <Badge tone={row.within_limit ? "ok" : "danger"}>
-                            {row.within_limit ? "allowed" : "blocked"}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <p className="tiny faint mb-0">Pick a row to use that distance.</p>
-            </Card>
-          )}
+          <Card title="Mandatory execution criteria">
+            <ul className="small muted" style={{ margin: 0, paddingLeft: 18 }}>
+              <li>No other active instruction or position for this user and symbol.</li>
+              <li>Exactly 0.02 lots per 1,000 capital, quantized to the MT5 lot grid.</li>
+              <li>Loss at the hard stop no greater than 2% of capital.</li>
+              <li>Enough free margin and valid broker stop/volume constraints.</li>
+              <li>TP sequence: 50% at 1R, 25% at 2R, final 25% at 3R.</li>
+            </ul>
+          </Card>
 
-          {spec.data && (
-            <Card title={`${spec.data.name} contract`}>
-              <dl className="kv">
-                <dt>Description</dt>
-                <dd className="small">{spec.data.description || spec.data.name}</dd>
-                <dt>Lot range</dt>
-                <dd>
-                  {lots(spec.data.volume_min)} – {lots(spec.data.volume_max)} step{" "}
-                  {spec.data.volume_step}
-                </dd>
-                <dt>Contract size</dt>
-                <dd>{spec.data.contract_size.toLocaleString()}</dd>
-                <dt>Value per 1.00 move / lot</dt>
-                <dd>{money(spec.data.money_per_price_unit_per_lot, spec.data.currency_profit)}</dd>
-                <dt>Minimum stop</dt>
-                <dd>{points(spec.data.stops_level_points)}</dd>
-                <dt>Tradable now</dt>
-                <dd>{spec.data.trade_allowed ? "yes" : "no"}</dd>
-              </dl>
-            </Card>
-          )}
-        </div>
-
-        {/* --------------------------------------------------- assessment */}
-        <div className="stack">
-          <ErrorBanner error={previewError} />
-          <ErrorBanner error={submitError} />
-
-          {result && !result.executed && (
-            <Banner tone={result.approved ? "warn" : "error"} title={
-              result.approved ? "Broker rejected the order" : "Entry blocked by the rules"
-            }>
-              {result.message}
-            </Banner>
-          )}
-
-          {plan && rules ? (
-            <>
-              <PlanWarnings warnings={plan.warnings} />
-
-              <Card>
-                <div className="between">
-                  <div>
-                    <h2>
-                      {plan.symbol} <span className={side === "buy" ? "long" : "short"}>
-                        {side === "buy" ? "long" : "short"}
-                      </span>{" "}
-                      {lots(plan.volume)} lots
-                    </h2>
-                    <div className="small muted">
-                      {price(plan.entry_price, plan.digits)} → stop{" "}
-                      {price(plan.stop_loss, plan.digits)} ({points(plan.risk_points)}), targets{" "}
-                      {plan.stages
-                        .filter((s) => s.will_execute)
-                        .map((s) => price(s.target_price, plan.digits))
-                        .join(" / ")}
-                    </div>
-                  </div>
-                  <Badge tone={rules.approved ? "ok" : "danger"}>
-                    {rules.approved ? "rules passed" : "blocked"}
-                  </Badge>
-                </div>
-
-                <div className="mt stack">
-                  {canOverride && (
-                    <label className="checkbox">
-                      <input
-                        type="checkbox"
-                        checked={override}
-                        onChange={(e) => setOverride(e.target.checked)}
-                      />
-                      <span>
-                        Override the rules that permit it. Rule 1 (one trade per derivative) and
-                        Rule 3 (2% risk ceiling) can never be overridden.
-                      </span>
-                    </label>
-                  )}
-
-                  <button
-                    className="btn btn-primary btn-block"
-                    disabled={blocked || submitting}
-                    onClick={() => void submit()}
-                  >
-                    {submitting
-                      ? "Sending to MT5..."
-                      : blocked
-                        ? "Blocked by the rules"
-                        : `Place ${side} ${lots(plan.volume)} ${plan.symbol}`}
-                  </button>
-
-                  {blocked && (
-                    <p className="tiny faint mb-0">{rules.summary}</p>
-                  )}
-                </div>
-              </Card>
-
-              <div className="grid grid-2">
-                <RiskSummary plan={plan} />
-                <RuleChecklist rules={rules} />
-              </div>
-
-              <LadderTable
-                stages={plan.stages}
-                currency={plan.account_currency}
-                digits={plan.digits}
-                ladder={assessment?.ladder}
-              />
-            </>
-          ) : (
-            <Card>
-              <div className="empty">
-                {previewing
-                  ? "Calculating..."
-                  : "Choose a derivative and a stop distance to see the full assessment."}
-              </div>
-            </Card>
-          )}
+          <Card title="Status meanings">
+            <p className="small muted mb-0">
+              <strong>Queued</strong> means saved only. <strong>Claimed/validating</strong> means the
+              local worker is checking MT5. <strong>Submitted/open</strong> means a broker action
+              succeeded. Rejected, failed, cancelled, and expired never mean a trade was placed.
+            </p>
+          </Card>
         </div>
       </div>
     </>
-  );
-}
-
-function SymbolOption({
-  entry,
-  selected,
-  onSelect,
-}: {
-  entry: SymbolBrief;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={selected ? "pick selected" : "pick"}
-      onClick={onSelect}
-      aria-pressed={selected}
-    >
-      <span className="between">
-        <span>
-          <span className="strong mono">{entry.name}</span>{" "}
-          <span className="tiny faint">{entry.group}</span>
-          <div className="tiny faint">{entry.description}</div>
-        </span>
-        <span className="mono tiny">
-          {entry.bid ? entry.bid.toFixed(entry.digits) : ""}
-        </span>
-      </span>
-    </button>
   );
 }
