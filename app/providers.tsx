@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 
 import { AuthProvider } from "@/state/auth";
+import { TradingProvider } from "@/state/trading";
 
 /**
  * Client boundary for the whole app.
@@ -13,5 +14,9 @@ import { AuthProvider } from "@/state/auth";
  * scattering `"use client"` through the tree.
  */
 export function Providers({ children }: { children: ReactNode }) {
-  return <AuthProvider>{children}</AuthProvider>;
+  return (
+    <AuthProvider>
+      <TradingProvider>{children}</TradingProvider>
+    </AuthProvider>
+  );
 }

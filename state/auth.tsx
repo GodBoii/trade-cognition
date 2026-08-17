@@ -1,9 +1,8 @@
 "use client";
 
 /**
- * Session state: the signed-in user, the connected MT5 accounts and the
- * currently selected account. Every page reads from here rather than fetching
- * the account list itself.
+ * Supabase session state only. MT5 connection/worker state belongs to the
+ * separate TradingProvider and can never invalidate a signed-in user.
  */
 
 import {
@@ -18,9 +17,14 @@ import {
 
 import type { Session } from "@supabase/supabase-js";
 
-import { ApiRequestError, api, setToken } from "@/lib/api/client";
-import type { Mt5Account, User } from "@/lib/api/types";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+
+export interface AppUser {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl: string;
+}
 
 export interface SignUpResult {
   requiresEmailConfirmation: boolean;
@@ -28,10 +32,7 @@ export interface SignUpResult {
 
 interface AuthState {
   ready: boolean;
-  user: User | null;
-  accounts: Mt5Account[];
-  accountId: number | null;
-  account: Mt5Account | null;
+  user: AppUser | null;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (
     email: string,
@@ -41,55 +42,32 @@ interface AuthState {
   ) => Promise<SignUpResult>;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
-  selectAccount: (id: number) => void;
-  refreshAccounts: () => Promise<Mt5Account[]>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
-  const [accounts, setAccounts] = useState<Mt5Account[]>([]);
-  const [accountId, setAccountId] = useState<number | null>(null);
-
-  const refreshAccounts = useCallback(async () => {
-    const list = await api.listAccounts();
-    setAccounts(list);
-    setAccountId((current) => {
-      if (current && list.some((a) => a.id === current)) return current;
-      const preferred = list.find((a) => a.is_default) ?? list[0];
-      return preferred ? preferred.id : null;
-    });
-    return list;
-  }, []);
-
-  const adoptSession = useCallback(async (session: Session | null) => {
+  const [user, setUser] = useState<AppUser | null>(null);
+  const adoptSession = useCallback((session: Session | null) => {
     if (!session) {
-      setToken(null);
       setUser(null);
-      setAccounts([]);
-      setAccountId(null);
       setReady(true);
       return;
     }
 
-    setToken(session.access_token);
-    try {
-      setUser(await api.me());
-      await refreshAccounts();
-    } catch (error) {
-      if (error instanceof ApiRequestError && error.isAuthFailure) {
-        setToken(null);
-        setUser(null);
-        setAccounts([]);
-        setAccountId(null);
-      }
-      throw error;
-    } finally {
-      setReady(true);
-    }
-  }, [refreshAccounts]);
+    const metadata = session.user.user_metadata ?? {};
+    const email = session.user.email ?? "";
+    setUser({
+      id: session.user.id,
+      email,
+      displayName: String(
+        metadata.full_name || metadata.name || metadata.user_name || email.split("@", 1)[0] || "Trader",
+      ),
+      avatarUrl: String(metadata.avatar_url || metadata.picture || ""),
+    });
+    setReady(true);
+  }, []);
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
@@ -101,14 +79,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setReady(true);
         return;
       }
-      void adoptSession(data.session).catch(() => undefined);
+      adoptSession(data.session);
     });
 
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active || event === "INITIAL_SESSION") return;
       // Defer work outside the auth callback so Supabase can release its lock.
       window.setTimeout(() => {
-        if (active) void adoptSession(session).catch(() => undefined);
+        if (active) adoptSession(session);
       }, 0);
     });
 
@@ -160,10 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     const { error } = await getSupabaseBrowserClient().auth.signOut();
-    setToken(null);
     setUser(null);
-    setAccounts([]);
-    setAccountId(null);
     if (error) throw error;
   }, []);
 
@@ -171,26 +146,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       ready,
       user,
-      accounts,
-      accountId,
-      account: accounts.find((a) => a.id === accountId) ?? null,
       signIn,
       signUp,
       signInWithGoogle,
       signOut,
-      selectAccount: setAccountId,
-      refreshAccounts,
     }),
     [
       ready,
       user,
-      accounts,
-      accountId,
       signIn,
       signUp,
       signInWithGoogle,
       signOut,
-      refreshAccounts,
     ],
   );
 
