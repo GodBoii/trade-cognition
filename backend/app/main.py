@@ -27,7 +27,9 @@ from .db.session import init_db
 from .errors import TradeCognitionError
 from .logging_conf import configure_logging, get_logger
 from .mt5.manager import shutdown_runtime
+from .services.remote_commands import RemoteCommandProcessor, validate_mock_queue_runtime
 from .workers.monitor import get_monitor
+from .workers.supabase_queue import SupabaseQueueWorker
 
 configure_logging(settings.log_level)
 log = get_logger(__name__)
@@ -48,8 +50,7 @@ Every entry passes through the same pipeline:
 3. Approved orders are placed on MT5 with the stop attached and a failsafe
    take-profit at the final rung.
 4. The position monitor then executes the ladder: 50% out at 1R with the stop
-   halved, the remainder at 2R with the stop at TP1, and the 1:3 target for any
-   residual volume.
+   halved, 25% out at 2R with the stop at TP1, and the final 25% at 3R.
 
 A rules rejection returns HTTP 200 with `approved: false` and the full
 explanation - it is a normal outcome, not a transport error.
@@ -59,6 +60,8 @@ explanation - it is a normal outcome, not a transport error.
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.validate_auth_configuration()
+    settings.validate_supabase_queue_configuration()
+    validate_mock_queue_runtime(settings)
     log.info(
         "Starting %s %s (env=%s, mt5=%s)",
         settings.app_name,
@@ -70,9 +73,23 @@ async def lifespan(app: FastAPI):
 
     monitor = get_monitor()
     await monitor.start()
+    remote_processor: RemoteCommandProcessor | None = None
+    queue_worker: SupabaseQueueWorker | None = None
     try:
+        if settings.supabase_queue_enabled:
+            remote_processor = RemoteCommandProcessor(settings)
+            queue_worker = SupabaseQueueWorker(
+                remote_processor,
+                settings=settings,
+                heartbeat_provider=remote_processor.heartbeat_snapshot,
+            )
+            await queue_worker.start()
         yield
     finally:
+        if queue_worker is not None:
+            await queue_worker.stop()
+        if remote_processor is not None:
+            await remote_processor.close()
         await monitor.stop()
         await shutdown_runtime()
         log.info("Shutdown complete")
