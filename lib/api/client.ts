@@ -255,8 +255,8 @@ export const api = {
  * token; the caller then falls back to REST polling.
  *
  * Note: platforms that only serve static files (Vercel, Netlify) cannot proxy a
- * WebSocket. Point `NEXT_PUBLIC_API_URL` straight at the backend so the socket bypasses
- * them, or accept the polling fallback in `useStream`.
+ * WebSocket. Point `NEXT_PUBLIC_API_URL` straight at the backend when using
+ * this legacy client so the socket bypasses them.
  */
 export function streamUrl(accountId?: number): string | null {
   const token = getToken();
