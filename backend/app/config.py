@@ -56,6 +56,18 @@ class Settings(BaseSettings):
     supabase_anon_key: str = ""
     supabase_auth_cache_seconds: int = 30
 
+    # --- Supabase worker ---------------------------------------------------
+    # The queue is deliberately opt-in. Worker RPCs use the public anon API key
+    # plus a high-entropy, per-worker token whose hash is stored in Supabase.
+    # The worker therefore does not need the broad service-role credential.
+    supabase_queue_enabled: bool = False
+    worker_token: str = ""
+    worker_poll_interval_seconds: float = 2.0
+    worker_heartbeat_interval_seconds: float = 15.0
+    worker_claim_lease_seconds: int = 90
+    worker_batch_size: int = 1
+    worker_backoff_max_seconds: float = 60.0
+
     # --- MT5 ---------------------------------------------------------------
     mt5_gateway: Literal["real", "mock"] = "mock"
     mt5_terminal_path: str = ""
@@ -73,7 +85,7 @@ class Settings(BaseSettings):
     default_lots_per_1000: float = 0.02
     default_max_risk_pct: float = 2.0
     default_capital_basis: Literal["balance", "equity", "fixed"] = "balance"
-    default_ladder: str = "standard_1_2_3"
+    default_ladder: str = "runner_1_2_3"
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -108,10 +120,37 @@ class Settings(BaseSettings):
     def supabase_auth_user_url(self) -> str:
         return f"{self.supabase_url.rstrip('/')}/auth/v1/user"
 
+    @property
+    def supabase_rest_url(self) -> str:
+        return f"{self.supabase_url.rstrip('/')}/rest/v1"
+
     def validate_auth_configuration(self) -> None:
         if self.is_production and not self.supabase_auth_enabled:
             raise RuntimeError(
                 "TC_SUPABASE_URL and TC_SUPABASE_ANON_KEY are required in production."
+            )
+
+    def validate_supabase_queue_configuration(self) -> None:
+        """Fail closed when the privileged queue worker is misconfigured."""
+        if not self.supabase_queue_enabled:
+            return
+        missing: list[str] = []
+        if not self.supabase_url.strip():
+            missing.append("TC_SUPABASE_URL")
+        if not self.supabase_anon_key.strip():
+            missing.append("TC_SUPABASE_ANON_KEY")
+        if not self.worker_token.strip():
+            missing.append("TC_WORKER_TOKEN")
+        if missing:
+            raise RuntimeError(
+                "Supabase queue worker is enabled but required settings are missing: "
+                + ", ".join(missing)
+            )
+        if not 1 <= self.worker_batch_size <= 50:
+            raise RuntimeError("TC_WORKER_BATCH_SIZE must be between 1 and 50.")
+        if not 30 <= self.worker_claim_lease_seconds <= 900:
+            raise RuntimeError(
+                "TC_WORKER_CLAIM_LEASE_SECONDS must be between 30 and 900."
             )
 
     @property
