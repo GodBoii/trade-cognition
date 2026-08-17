@@ -1,0 +1,67 @@
+# =============================================================================
+# Trade Cognition - Python backend only (the Next.js frontend is on Vercel).
+#
+#   docker compose up --build
+#   -> api  http://localhost:8000/docs
+#
+# The backend runs the SIMULATED broker. Live MetaTrader 5 trading needs a
+# Windows host with a running terminal, which a Linux container cannot provide -
+# see backend/Dockerfile and docs/06-mt5-integration.md.
+#
+# Required in .env before starting (compose fails fast without them):
+#   TC_SUPABASE_URL, TC_SUPABASE_ANON_KEY, TC_CREDENTIAL_ENCRYPTION_KEY
+# =============================================================================
+
+services:
+  backend:
+    build:
+      context: ./backend
+    image: trade-cognition-backend:latest
+    restart: unless-stopped
+    environment:
+      TC_ENV: ${TC_ENV:-staging}
+      TC_LOG_LEVEL: ${TC_LOG_LEVEL:-INFO}
+
+      # Supabase validates browser sessions. The service-role key is not used.
+      TC_SUPABASE_URL: ${TC_SUPABASE_URL:?set TC_SUPABASE_URL in .env}
+      TC_SUPABASE_ANON_KEY: ${TC_SUPABASE_ANON_KEY:?set TC_SUPABASE_ANON_KEY in .env}
+      TC_SUPABASE_AUTH_CACHE_SECONDS: ${TC_SUPABASE_AUTH_CACHE_SECONDS:-30}
+
+      # No default: changing this key would orphan encrypted MT5 credentials.
+      TC_CREDENTIAL_ENCRYPTION_KEY: ${TC_CREDENTIAL_ENCRYPTION_KEY:?set TC_CREDENTIAL_ENCRYPTION_KEY in .env}
+
+      # State lives on the named volume mounted at /data.
+      TC_DATABASE_URL: sqlite:////data/trade_cognition.db
+
+      # Linux container: the simulator is the only gateway available here.
+      TC_MT5_GATEWAY: mock
+
+      TC_MONITOR_ENABLED: "true"
+      TC_MONITOR_INTERVAL_SECONDS: ${TC_MONITOR_INTERVAL_SECONDS:-2.0}
+      TC_ALLOW_REGISTRATION: "false"
+
+      # Vercel calls this API directly, so include the exact deployed origin(s).
+      TC_CORS_ORIGINS: ${TC_CORS_ORIGINS:-http://localhost:3000}
+
+      TC_DEFAULT_LOTS_PER_1000: ${TC_DEFAULT_LOTS_PER_1000:-0.02}
+      TC_DEFAULT_MAX_RISK_PCT: ${TC_DEFAULT_MAX_RISK_PCT:-2.0}
+      TC_DEFAULT_LADDER: ${TC_DEFAULT_LADDER:-standard_1_2_3}
+    volumes:
+      - backend-data:/data
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status == 200 else 1)",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  backend-data:
