@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Card, Empty, ErrorBanner, Spinner } from "@/components/ui";
+import { Badge, Card, Empty, ErrorBanner, PageHead, Stat, Spinner } from "@/components/ui";
 import { dateTime } from "@/lib/format";
 import { useTrading } from "@/state/trading";
 
@@ -10,26 +10,23 @@ export default function JournalView() {
   const expired = recentIntents.filter((item) => item.status === "expired").length;
 
   return (
-    <>
-      <div className="page-head">
-        <div>
-          <h1>Execution journal</h1>
-          <p>
-            Append-only worker events and durable decisions from Supabase. Rejections and expiry are
-            recorded outcomes, not hidden transport errors.
-          </p>
-        </div>
-        <button className="btn btn-sm" onClick={() => void refresh()} disabled={loading}>
-          {loading ? "Refreshing..." : "Refresh"}
-        </button>
-      </div>
+    <div className="page-enter">
+      <PageHead
+        title="Execution journal"
+        subtitle="Append-only worker events and durable decisions from Supabase. Rejections and expiry are recorded outcomes, not hidden transport errors."
+        actions={
+          <button className="btn btn-sm" onClick={() => void refresh()} disabled={loading}>
+            {loading ? "Refreshing..." : "Refresh"}
+          </button>
+        }
+      />
 
       <ErrorBanner error={error} />
 
       <div className="grid grid-3">
-        <Card title="Events"><div className="stat-value">{recentEvents.length}</div></Card>
-        <Card title="Rule rejections"><div className="stat-value">{rejected}</div></Card>
-        <Card title="Expired instructions"><div className="stat-value">{expired}</div></Card>
+        <Stat label="Events" value={recentEvents.length} />
+        <Stat label="Rule rejections" value={rejected} tone={rejected > 0 ? "neg" : undefined} />
+        <Stat label="Expired instructions" value={expired} />
       </div>
 
       <div className="mt">
@@ -72,7 +69,7 @@ export default function JournalView() {
           </ul>
         </Card>
       </div>
-    </>
+    </div>
   );
 }
 
