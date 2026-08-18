@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 
-import { Badge, Banner, Card, Empty, ErrorBanner, SideBadge, Stat, Spinner } from "@/components/ui";
+import { Badge, Banner, Card, Empty, ErrorBanner, PageHead, SideBadge, Stat, Spinner } from "@/components/ui";
 import { dateTime, money } from "@/lib/format";
 import { useTrading } from "@/state/trading";
 
@@ -29,24 +29,21 @@ export default function DashboardView() {
         : connection?.last_balance ?? null;
 
   return (
-    <>
-      <div className="page-head">
-        <div>
-          <h1>Dashboard</h1>
-          <p>
-            Last durable MT5 snapshot and execution state from Supabase. The website remains usable
-            without a direct connection to your local worker.
-          </p>
-        </div>
-        <div className="inline">
-          <Badge tone={status === "online" ? "ok" : status === "error" ? "danger" : "warn"}>
-            {status}
-          </Badge>
-          <button className="btn btn-sm" onClick={() => void refresh()} disabled={loading}>
-            {loading ? "Refreshing..." : "Refresh"}
-          </button>
-        </div>
-      </div>
+    <div className="page-enter">
+      <PageHead
+        title="Dashboard"
+        subtitle="Last durable MT5 snapshot and execution state from Supabase. The website remains usable without a direct connection to your local worker."
+        actions={
+          <>
+            <Badge tone={status === "online" ? "ok" : status === "error" ? "danger" : "warn"}>
+              {status}
+            </Badge>
+            <button className="btn btn-sm" onClick={() => void refresh()} disabled={loading}>
+              {loading ? "Refreshing..." : "Refresh"}
+            </button>
+          </>
+        }
+      />
 
       <ErrorBanner error={error} />
       {!connection && !loading && (
@@ -147,7 +144,7 @@ export default function DashboardView() {
           </p>
         </Card>
       </div>
-    </>
+    </div>
   );
 }
 
