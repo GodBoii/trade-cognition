@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import { Badge, Card, Empty, ErrorBanner, SideBadge, Spinner } from "@/components/ui";
+import { Badge, Card, Empty, ErrorBanner, PageHead, SideBadge, Spinner } from "@/components/ui";
 import { dateTime } from "@/lib/format";
 import type { TradeIntentStatus } from "@/lib/supabase/types";
 import { useTrading } from "@/state/trading";
@@ -26,29 +26,26 @@ export default function TradesView() {
   );
 
   return (
-    <>
-      <div className="page-head">
-        <div>
-          <h1>Trade queue and history</h1>
-          <p>
-            Durable Supabase state. Pending instructions survive browser closure and remain visibly
-            different from broker-submitted trades.
-          </p>
-        </div>
-        <div className="inline">
-          <label className="checkbox" style={{ margin: 0 }}>
-            <input
-              type="checkbox"
-              checked={activeOnly}
-              onChange={(event) => setActiveOnly(event.target.checked)}
-            />
-            <span>Active only</span>
-          </label>
-          <button className="btn btn-sm" onClick={() => void refresh()} disabled={loading}>
-            {loading ? "Refreshing..." : "Refresh"}
-          </button>
-        </div>
-      </div>
+    <div className="page-enter">
+      <PageHead
+        title="Trade queue and history"
+        subtitle="Durable Supabase state. Pending instructions survive browser closure and remain visibly different from broker-submitted trades."
+        actions={
+          <>
+            <label className="checkbox" style={{ margin: 0 }}>
+              <input
+                type="checkbox"
+                checked={activeOnly}
+                onChange={(event) => setActiveOnly(event.target.checked)}
+              />
+              <span>Active only</span>
+            </label>
+            <button className="btn btn-sm" onClick={() => void refresh()} disabled={loading}>
+              {loading ? "Refreshing..." : "Refresh"}
+            </button>
+          </>
+        }
+      />
 
       <ErrorBanner error={error} />
 
@@ -122,7 +119,7 @@ export default function TradesView() {
           </p>
         </Card>
       </div>
-    </>
+    </div>
   );
 }
 
