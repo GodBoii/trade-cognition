@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Badge, Banner, Card, ErrorBanner, Field, Spinner } from "@/components/ui";
+import { Badge, Banner, Card, ErrorBanner, Field, PageHead, Spinner } from "@/components/ui";
 import { money } from "@/lib/format";
 import type { WorkerAgent } from "@/lib/supabase/types";
 import { useTrading } from "@/state/trading";
@@ -96,19 +96,16 @@ export default function ConnectAccountView() {
   };
 
   return (
-    <>
-      <div className="page-head">
-        <div>
-          <h1>MetaTrader 5 connection</h1>
-          <p>
-            Pair this website with the Trade Cognition worker. The browser queues instructions in
-            Supabase; the trusted local runtime validates and executes supported commands.
-          </p>
-        </div>
-        <button className="btn btn-sm" onClick={() => void refresh()} disabled={loading}>
-          {loading ? "Refreshing..." : "Refresh status"}
-        </button>
-      </div>
+    <div className="page-enter">
+      <PageHead
+        title="MetaTrader 5 connection"
+        subtitle="Pair this website with the Trade Cognition worker. The browser queues instructions in Supabase; the trusted local runtime validates and executes supported commands."
+        actions={
+          <button className="btn btn-sm" onClick={() => void refresh()} disabled={loading}>
+            {loading ? "Refreshing..." : "Refresh status"}
+          </button>
+        }
+      />
 
       <ErrorBanner error={loadError} />
       <ErrorBanner error={error} />
@@ -152,7 +149,11 @@ export default function ConnectAccountView() {
               />
             </Field>
             <button className="btn btn-primary btn-block" type="submit" disabled={busy !== null}>
-              {busy === "create" ? "Creating secure pairing..." : "Create worker and connection"}
+              {busy === "create" ? (
+                <span className="t-shimmer" data-text="Creating secure pairing...">Creating secure pairing...</span>
+              ) : (
+                "Create worker and connection"
+              )}
             </button>
           </form>
           <p className="tiny faint mb-0 mt">
@@ -316,6 +317,6 @@ export default function ConnectAccountView() {
           )}
         </Card>
       </div>
-    </>
+    </div>
   );
 }
