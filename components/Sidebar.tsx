@@ -8,12 +8,12 @@ import { useAuth } from "@/state/auth";
 import { useTrading, type TradingStatus } from "@/state/trading";
 
 const LINKS = [
-  { href: "/", label: "Dashboard" },
-  { href: "/trade", label: "New trade" },
-  { href: "/trades", label: "Trades" },
-  { href: "/rules", label: "Rules" },
-  { href: "/journal", label: "Journal" },
-  { href: "/accounts", label: "Accounts" },
+  { href: "/", label: "Dashboard", icon: "◆" },
+  { href: "/trade", label: "New trade", icon: "⊕" },
+  { href: "/trades", label: "Trades", icon: "⇄" },
+  { href: "/rules", label: "Rules", icon: "◈" },
+  { href: "/journal", label: "Journal", icon: "◉" },
+  { href: "/accounts", label: "Accounts", icon: "⊙" },
 ] as const;
 
 const STATUS_LABEL: Record<TradingStatus, string> = {
@@ -44,10 +44,12 @@ export function Sidebar({ minimal = false }: { minimal?: boolean }) {
 
   return (
     <aside className="sidebar">
-      <div className="brand">
-        <span className="brand-mark">Trade Cognition</span>
+      <div>
+        <div className="brand">
+          <span className="brand-mark">Trade Cognition</span>
+        </div>
+        <div className="brand-sub">disciplined execution</div>
       </div>
-      <div className="brand-sub">disciplined execution</div>
 
       {!minimal && (
         <nav className="nav" aria-label="Main">
@@ -58,7 +60,10 @@ export function Sidebar({ minimal = false }: { minimal?: boolean }) {
               className={isActive(link.href) ? "nav-link active" : "nav-link"}
               aria-current={isActive(link.href) ? "page" : undefined}
             >
-              {link.label}
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ opacity: 0.5, fontSize: 12 }}>{link.icon}</span>
+                {link.label}
+              </span>
             </Link>
           ))}
         </nav>
