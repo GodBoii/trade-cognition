@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 
-import { Badge, Banner, Card, ErrorBanner, Field } from "@/components/ui";
+import { Badge, Banner, Card, ErrorBanner, Field, PageHead } from "@/components/ui";
 import { enqueueTradeIntent } from "@/lib/supabase/data";
 import type { TradeIntent } from "@/lib/supabase/types";
 import { useTrading } from "@/state/trading";
@@ -76,17 +76,14 @@ export default function TradeTicketView() {
   };
 
   return (
-    <>
-      <div className="page-head">
-        <div>
-          <h1>New trade instruction</h1>
-          <p>
-            Save an expiring instruction in Supabase. The local worker uses current MT5 prices,
-            symbol limits, positions, and margin to approve or reject it before execution.
-          </p>
-        </div>
-        <Badge tone={status === "online" ? "ok" : "warn"}>worker {status}</Badge>
-      </div>
+    <div className="page-enter">
+      <PageHead
+        title="New trade instruction"
+        subtitle="Save an expiring instruction in Supabase. The local worker uses current MT5 prices, symbol limits, positions, and margin to approve or reject it before execution."
+        actions={
+          <Badge tone={status === "online" ? "ok" : "warn"}>worker {status}</Badge>
+        }
+      />
 
       <ErrorBanner error={error} />
       {!connection && (
@@ -220,7 +217,11 @@ export default function TradeTicketView() {
               type="submit"
               disabled={!canSubmit || submitting}
             >
-              {submitting ? "Saving instruction..." : "Queue for worker validation"}
+              {submitting ? (
+                <span className="t-shimmer" data-text="Saving instruction...">Saving instruction...</span>
+              ) : (
+                "Queue for worker validation"
+              )}
             </button>
           </form>
         </Card>
@@ -267,6 +268,6 @@ export default function TradeTicketView() {
           </Card>
         </div>
       </div>
-    </>
+    </div>
   );
 }
