@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 
-import { Badge, Banner, Card, ErrorBanner, SideBadge, Spinner } from "@/components/ui";
+import { Badge, Banner, Card, ErrorBanner, PageHead, SideBadge, Spinner } from "@/components/ui";
 import {
   enqueueTradeCommand,
   getTradeIntent,
@@ -56,26 +56,26 @@ export default function TradeDetailView({ tradeId }: { tradeId: string }) {
   };
 
   return (
-    <>
-      <div className="page-head">
-        <div>
-          <h1>{trade.symbol} <SideBadge side={trade.side} /> <Badge tone="info">{trade.status}</Badge></h1>
-          <p>
-            Intent <span className="mono">{trade.id}</span> · created {dateTime(trade.created_at)}
-            {" · "}<Link href="/trades">back to list</Link>
-          </p>
-        </div>
-        <div className="btn-group">
-          <button className="btn btn-sm" disabled={busy !== null} onClick={() => void queue("sync_trade")}>
-            {busy === "sync_trade" ? "Queuing..." : "Queue broker sync"}
-          </button>
-          {active && (
-            <button className="btn btn-sm btn-danger" disabled={busy !== null} onClick={() => void queue("close_trade")}>
-              {busy === "close_trade" ? "Queuing..." : "Queue close"}
+    <div className="page-enter">
+      <PageHead
+        title={trade.symbol}
+        subtitle={`Intent ${trade.id} · created ${dateTime(trade.created_at)}`}
+        actions={
+          <>
+            <SideBadge side={trade.side} />
+            <Badge tone="info">{trade.status}</Badge>
+            <Link href="/trades" className="btn btn-sm">back to list</Link>
+            <button className="btn btn-sm" disabled={busy !== null} onClick={() => void queue("sync_trade")}>
+              {busy === "sync_trade" ? "Queuing..." : "Queue broker sync"}
             </button>
-          )}
-        </div>
-      </div>
+            {active && (
+              <button className="btn btn-sm btn-danger" disabled={busy !== null} onClick={() => void queue("close_trade")}>
+                {busy === "close_trade" ? "Queuing..." : "Queue close"}
+              </button>
+            )}
+          </>
+        }
+      />
 
       <ErrorBanner error={actionError} />
       {note && <Banner tone="ok">{note} Closing this browser will not remove the command.</Banner>}
@@ -137,6 +137,6 @@ export default function TradeDetailView({ tradeId }: { tradeId: string }) {
           )}
         </Card>
       </div>
-    </>
+    </div>
   );
 }
