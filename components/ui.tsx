@@ -2,8 +2,11 @@
 
 /** Small presentational primitives shared across pages. */
 
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
+/* ================================================================
+   Card — glassmorphism panel with stagger entrance
+   ================================================================ */
 export function Card({
   title,
   hint,
@@ -31,6 +34,9 @@ export function Card({
   );
 }
 
+/* ================================================================
+   Stat — metric display with digit pop-in on mount / update
+   ================================================================ */
 export function Stat({
   label,
   value,
@@ -42,21 +48,64 @@ export function Stat({
   note?: ReactNode;
   tone?: "pos" | "neg" | "muted";
 }) {
+  const valueStr = typeof value === "string" || typeof value === "number" ? String(value) : null;
+
   return (
-    <div className="stat">
+    <div className="stat stagger-enter">
       <div className="stat-label">{label}</div>
-      <div className={tone ? `stat-value ${tone}` : "stat-value"}>{value}</div>
+      <div className={tone ? `stat-value ${tone}` : "stat-value"}>
+        {valueStr ? <AnimatedValue text={valueStr} /> : value}
+      </div>
       {note && <div className="stat-note">{note}</div>}
     </div>
   );
 }
 
+/** Wraps a string value with the number pop-in animation (#02). */
+function AnimatedValue({ text }: { text: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [prevText, setPrevText] = useState<string | null>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (prevText !== text) {
+      el.classList.remove("is-animating");
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+      void el.offsetHeight; // force reflow for replay
+      el.classList.add("is-animating");
+      setPrevText(text);
+    }
+  }, [text, prevText]);
+
+  const chars = text.split("");
+  return (
+    <span className="t-digit-group is-animating" ref={ref}>
+      {chars.map((ch, i) => {
+        const stagger =
+          i === chars.length - 2 ? "1" : i === chars.length - 1 ? "2" : undefined;
+        return (
+          <span key={`${i}-${ch}`} className="t-digit" data-stagger={stagger}>
+            {ch}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+/* ================================================================
+   Badge
+   ================================================================ */
 export type BadgeTone = "ok" | "warn" | "danger" | "info" | "muted";
 
 export function Badge({ tone = "muted", children }: { tone?: BadgeTone; children: ReactNode }) {
   return <span className={`badge badge-${tone}`}>{children}</span>;
 }
 
+/* ================================================================
+   Banner — toast-style entrance animation (#22)
+   ================================================================ */
 export function Banner({
   tone = "info",
   title,
@@ -80,19 +129,32 @@ export function ErrorBanner({ error }: { error: unknown }) {
   return <Banner tone="error">{error instanceof Error ? error.message : String(error)}</Banner>;
 }
 
+/* ================================================================
+   Spinner — ring + shimmer text label (#15)
+   ================================================================ */
 export function Spinner({ label }: { label?: string }) {
   return (
     <span className="inline">
       <span className="spinner" aria-hidden="true" />
-      {label && <span className="muted small">{label}</span>}
+      {label && (
+        <span className="t-shimmer small" data-text={label}>
+          {label}
+        </span>
+      )}
     </span>
   );
 }
 
+/* ================================================================
+   Empty state
+   ================================================================ */
 export function Empty({ children }: { children: ReactNode }) {
   return <div className="empty">{children}</div>;
 }
 
+/* ================================================================
+   Field
+   ================================================================ */
 export function Field({
   label,
   hint,
@@ -114,6 +176,9 @@ export function Field({
   );
 }
 
+/* ================================================================
+   Status / Side badges
+   ================================================================ */
 export function StatusBadge({ status }: { status: string }) {
   const tone: BadgeTone =
     status === "open" || status === "scaling"
@@ -128,4 +193,36 @@ export function StatusBadge({ status }: { status: string }) {
 
 export function SideBadge({ side }: { side: "buy" | "sell" }) {
   return <Badge tone={side === "buy" ? "ok" : "danger"}>{side === "buy" ? "LONG" : "SHORT"}</Badge>;
+}
+
+/* ================================================================
+   PageHead — staggered texts-reveal heading (#18)
+   ================================================================ */
+export function PageHead({
+  title,
+  subtitle,
+  actions,
+}: {
+  title: string;
+  subtitle?: string;
+  actions?: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // Trigger the stagger entrance after mount
+    requestAnimationFrame(() => el.classList.add("is-shown"));
+  }, []);
+
+  return (
+    <div className="page-head">
+      <div className="t-stagger" ref={ref}>
+        <h1 className="t-stagger-line t-stagger-line--1">{title}</h1>
+        {subtitle && <p className="t-stagger-line t-stagger-line--2">{subtitle}</p>}
+      </div>
+      {actions && <div className="inline">{actions}</div>}
+    </div>
+  );
 }
