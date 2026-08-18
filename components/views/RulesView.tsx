@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { Badge, Banner, Card, ErrorBanner, Field, Spinner } from "@/components/ui";
+import { Badge, Banner, Card, ErrorBanner, Field, PageHead, Spinner } from "@/components/ui";
 import { saveTradingRules } from "@/lib/supabase/data";
 import type { UserTradingRules } from "@/lib/supabase/types";
 import { useAuth } from "@/state/auth";
@@ -51,17 +51,12 @@ export default function RulesView() {
   };
 
   return (
-    <>
-      <div className="page-head">
-        <div>
-          <h1>Trading rules</h1>
-          <p>
-            Supabase stores this strategy; the local worker revalidates it with fresh MT5 data
-            immediately before any order reaches the broker.
-          </p>
-        </div>
-        <Badge tone="info">worker enforced</Badge>
-      </div>
+    <div className="page-enter">
+      <PageHead
+        title="Trading rules"
+        subtitle="Supabase stores this strategy; the local worker revalidates it with fresh MT5 data immediately before any order reaches the broker."
+        actions={<Badge tone="info">worker enforced</Badge>}
+      />
 
       <ErrorBanner error={loadError} />
       <ErrorBanner error={error} />
@@ -209,7 +204,11 @@ export default function RulesView() {
 
           <div className="mt btn-group">
             <button className="btn btn-primary" type="submit" disabled={saving}>
-              {saving ? "Saving to Supabase..." : "Save configurable guards"}
+              {saving ? (
+                <span className="t-shimmer" data-text="Saving to Supabase...">Saving to Supabase...</span>
+              ) : (
+                "Save configurable guards"
+              )}
             </button>
             <button
               className="btn"
@@ -222,6 +221,6 @@ export default function RulesView() {
           </div>
         </form>
       )}
-    </>
+    </div>
   );
 }
